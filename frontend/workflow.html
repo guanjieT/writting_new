@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Novel Agent Clean - 设定与写作台</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body data-page="workflow">
+  <header class="topbar">
+    <div class="brand-block">
+      <p class="eyebrow">Novel Agent Clean</p>
+      <h1>设定与写作台</h1>
+      <p class="lede">这里不再按接口步骤排满一页，而是把“设定资产”和“正文推进”拆成可切换的工作对象。</p>
+    </div>
+    <nav class="nav-links">
+      <a href="/">项目</a>
+      <a href="/workflow" aria-current="page">设定与写作</a>
+      <a href="/outline">结构台</a>
+      <a href="/review">审查台</a>
+    </nav>
+  </header>
+
+  <main class="workspace-layout">
+    <aside class="panel workspace-sidebar">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">导航</p>
+          <h2>创作对象</h2>
+        </div>
+      </div>
+      <div id="workflow-project-mini"></div>
+      <div id="workflow-stage-groups"></div>
+      <div class="context-card subtle">
+        <p class="eyebrow">结构联动</p>
+        <h3>卷纲与章节计划不在这里编辑</h3>
+        <p class="muted">章节正文依赖结构台里的总纲、卷纲和章节计划。结构没定好时，这里的正文模块会保持锁定。</p>
+        <a class="secondary-link" id="jump-outline-link" href="/outline">去结构台</a>
+      </div>
+    </aside>
+
+    <section class="panel workspace-main">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">主工作区</p>
+          <h2 id="workflow-workspace-title">选择一个对象开始工作</h2>
+        </div>
+        <div class="actions-row compact">
+          <button id="reload-workflow" class="secondary" type="button">刷新</button>
+        </div>
+      </div>
+      <div id="workflow-overview" class="stats-grid"></div>
+      <div id="workflow-workspace"></div>
+    </section>
+
+    <aside class="panel workspace-inspector">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">审查侧栏</p>
+          <h2>当前上下文</h2>
+        </div>
+      </div>
+      <div id="workflow-inspector"></div>
+    </aside>
+  </main>
+
+  <script type="module" src="/assets/js/workflow-page.js"></script>
+</body>
+</html>

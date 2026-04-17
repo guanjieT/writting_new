@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Novel Agent Clean - 结构台</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body data-page="outline">
+  <header class="topbar">
+    <div class="brand-block">
+      <p class="eyebrow">Novel Agent Clean</p>
+      <h1>结构台</h1>
+      <p class="lede">总纲、卷纲、章节计划集中处理。这里的核心不是表单，而是故事结构树与结构审查。</p>
+    </div>
+    <nav class="nav-links">
+      <a href="/">项目</a>
+      <a href="/workflow">设定与写作</a>
+      <a href="/outline" aria-current="page">结构台</a>
+      <a href="/review">审查台</a>
+    </nav>
+  </header>
+
+  <main class="workspace-layout">
+    <aside class="panel workspace-sidebar">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">结构树</p>
+          <h2>主节点</h2>
+        </div>
+      </div>
+      <div id="outline-project-mini"></div>
+      <div id="outline-tree"></div>
+    </aside>
+
+    <section class="panel workspace-main">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">结构工作区</p>
+          <h2 id="outline-workspace-title">选择一个结构节点</h2>
+        </div>
+        <div class="actions-row compact">
+          <button id="reload-outline" class="secondary" type="button">刷新</button>
+        </div>
+      </div>
+      <div id="outline-overview" class="stats-grid"></div>
+      <div id="outline-workspace"></div>
+    </section>
+
+    <aside class="panel workspace-inspector">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">结构审查</p>
+          <h2>检查点</h2>
+        </div>
+      </div>
+      <div id="outline-inspector"></div>
+    </aside>
+  </main>
+
+  <script type="module" src="/assets/js/outline-page.js"></script>
+</body>
+</html>

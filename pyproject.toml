@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novel-agent-clean"
+version = "0.1.0"
+description = "A decoupled novel-writing agent framework with FastAPI and pluggable agents."
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "python-dotenv>=1.0",
+  "uvicorn>=0.30",
+  "pydantic>=2.7",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+include = ["novel_agent*"]
