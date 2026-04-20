@@ -63,6 +63,12 @@ class OutlineRequest(GenerationBaseRequest):
     notes: list[str] = Field(default_factory=list)
 
 
+class RoughVolumeOutlineRequest(GenerationBaseRequest):
+    volume_count: int = 1
+    chapters_per_volume: int = 12
+    notes: list[str] = Field(default_factory=list)
+
+
 class VolumeOutlineRequest(GenerationBaseRequest):
     volume_index: int = 1
     volume_title: str = ""
@@ -70,10 +76,14 @@ class VolumeOutlineRequest(GenerationBaseRequest):
     volume_goal: str = ""
     volume_conflict: str = ""
     volume_hook: str = ""
-    chapter_briefs: list[str] = Field(default_factory=list)
     target_words: int = 0
     target_chapter_count: int = 0
-    confirmed: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+class RoughChapterPlanRequest(GenerationBaseRequest):
+    volume_index: int = 1
+    target_chapter_count: int = 0
     notes: list[str] = Field(default_factory=list)
 
 
@@ -92,7 +102,6 @@ class ChapterPlanRequest(GenerationBaseRequest):
     characters: list[str] = Field(default_factory=list)
     introduced_characters: list[str] = Field(default_factory=list)
     scene_summaries: list[str] = Field(default_factory=list)
-    confirmed: bool = False
     plan_notes: str = ""
     notes: list[str] = Field(default_factory=list)
 

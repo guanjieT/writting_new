@@ -8,15 +8,19 @@ class WorkflowStepSpec:
     key: str
     label: str
     depends_on: tuple[str, ...] = ()
+    page: str = "workflow"
+    scope: str = "project"
 
 
 WORKFLOW_STEPS: tuple[WorkflowStepSpec, ...] = (
     WorkflowStepSpec("requirements", "需求分析"),
     WorkflowStepSpec("story_bible", "世界观设定", ("requirements",)),
     WorkflowStepSpec("characters", "角色框架", ("requirements", "story_bible")),
-    WorkflowStepSpec("outline", "总纲生成", ("requirements", "story_bible", "characters")),
-    WorkflowStepSpec("volume_outline", "卷纲生成", ("outline",)),
-    WorkflowStepSpec("chapter_plan", "章节计划", ("volume_outline",)),
+    WorkflowStepSpec("outline", "总纲", ("requirements", "story_bible", "characters"), page="outline"),
+    WorkflowStepSpec("rough_volume_outline", "粗卷纲", ("outline",), page="outline"),
+    WorkflowStepSpec("volume_outline", "完善卷纲", ("rough_volume_outline",), page="volume-outline", scope="volume"),
+    WorkflowStepSpec("rough_chapter_plan", "粗章纲", ("volume_outline",), page="volume-outline", scope="volume"),
+    WorkflowStepSpec("chapter_plan", "完善章节计划", ("rough_chapter_plan",), page="chapter-plan", scope="chapter"),
     WorkflowStepSpec("chapter", "章节生成", ("chapter_plan",)),
     WorkflowStepSpec("revision", "修订", ("chapter",)),
     WorkflowStepSpec("consistency", "一致性检查", ("chapter",)),

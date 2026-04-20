@@ -6,6 +6,7 @@ from typing import Any
 
 from .domain import NovelProject
 from .services import compact_artifact_context
+from .services import _artifact_scope_payload, _scope_matches
 
 
 def _project_brief(project: NovelProject) -> dict[str, Any]:
@@ -43,13 +44,19 @@ def _step_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _selected_artifacts(project: NovelProject, step_keys: list[str], *, excerpt_chars: int = 0) -> dict[str, Any]:
+def _selected_artifacts(project: NovelProject, step_keys: list[str], payload: Mapping[str, Any], *, excerpt_chars: int = 0) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for step_key in step_keys:
-        artifact = project.artifacts.get(step_key)
-        if artifact is None:
-            continue
-        result[step_key] = compact_artifact_context(artifact, excerpt_chars=excerpt_chars, include_excerpt=excerpt_chars > 0)
+        artifact = next(
+            (
+                candidate
+                for candidate in project.artifacts.values()
+                if _scope_matches(candidate, step_key, _artifact_scope_payload(step_key, payload))
+            ),
+            None,
+        )
+        if artifact is not None:
+            result[step_key] = compact_artifact_context(artifact, excerpt_chars=excerpt_chars, include_excerpt=excerpt_chars > 0)
     return result
 
 
@@ -66,9 +73,11 @@ GENERATION_CONTEXT_PROFILES: dict[str, GenerationContextProfile] = {
     "story_bible": GenerationContextProfile("story_bible", ("requirements",), artifact_excerpt_chars=160, context_type="short"),
     "characters": GenerationContextProfile("characters", ("requirements", "story_bible"), artifact_excerpt_chars=160, context_type="short"),
     "outline": GenerationContextProfile("outline", ("requirements", "story_bible", "characters"), artifact_excerpt_chars=0, context_type="brief"),
-    "volume_outline": GenerationContextProfile("volume_outline", ("outline", "requirements"), artifact_excerpt_chars=220, context_type="expanded"),
-    "chapter_plan": GenerationContextProfile("chapter_plan", ("volume_outline", "outline", "story_bible", "characters"), artifact_excerpt_chars=180, context_type="expanded"),
-    "chapter": GenerationContextProfile("chapter", ("chapter_plan", "volume_outline", "outline"), artifact_excerpt_chars=260, context_type="expanded"),
+    "rough_volume_outline": GenerationContextProfile("rough_volume_outline", ("outline",), artifact_excerpt_chars=220, context_type="expanded"),
+    "volume_outline": GenerationContextProfile("volume_outline", ("rough_volume_outline", "outline"), artifact_excerpt_chars=220, context_type="expanded"),
+    "rough_chapter_plan": GenerationContextProfile("rough_chapter_plan", ("volume_outline", "rough_volume_outline", "outline"), artifact_excerpt_chars=180, context_type="expanded"),
+    "chapter_plan": GenerationContextProfile("chapter_plan", ("rough_chapter_plan", "volume_outline", "outline"), artifact_excerpt_chars=180, context_type="expanded"),
+    "chapter": GenerationContextProfile("chapter", ("chapter_plan", "rough_chapter_plan", "volume_outline", "outline"), artifact_excerpt_chars=260, context_type="expanded"),
     "revision": GenerationContextProfile("revision", ("chapter", "chapter_plan"), artifact_excerpt_chars=220, context_type="focused"),
     "consistency": GenerationContextProfile("consistency", ("chapter", "chapter_plan", "story_bible", "characters"), artifact_excerpt_chars=180, context_type="focused"),
     "memory": GenerationContextProfile("memory", ("chapter", "revision", "consistency"), artifact_excerpt_chars=140, context_type="focused"),
@@ -83,7 +92,7 @@ def build_generation_context(project: NovelProject, step: str, payload: Mapping[
         "project_brief": _project_brief(project),
         "project_input": _project_input_payload(project),
         "step_payload": _step_payload(payload),
-        "selected_artifacts": _selected_artifacts(project, list(profile.artifact_keys), excerpt_chars=profile.artifact_excerpt_chars),
+        "selected_artifacts": _selected_artifacts(project, list(profile.artifact_keys), payload, excerpt_chars=profile.artifact_excerpt_chars),
     }
 
 

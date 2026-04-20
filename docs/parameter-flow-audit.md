@@ -8,7 +8,7 @@
 2. 页面进入时，前端通过 `project_id` 从本地存储或 URL 读取当前项目，见 [frontend/assets/js/state.js](../frontend/assets/js/state.js).
 3. 项目中心表单提交时，前端把当前输入写回项目对象并调用 `POST /projects` 或 `PUT /projects/{project_id}`，见 [frontend/assets/js/index-page.js](../frontend/assets/js/index-page.js).
 4. 步骤页面提交时，前端先把当前表单序列化为 payload，再调用对应后端接口，见 [frontend/assets/js/app-config.js](../frontend/assets/js/app-config.js) 和 [frontend/assets/js/workspace-utils.js](../frontend/assets/js/workspace-utils.js).
-5. 后端路由接收 payload 后，把它交给 orchestrator 或 AI 补全接口，再由 agent 或 prompt 模板消费，见 [novel_agent/api/routes/workflow_steps.py](../novel_agent/api/routes/workflow_steps.py) 与 [novel_agent/infrastructure.py](../novel_agent/infrastructure.py).
+5. 后端路由接收 payload 后，把它交给 orchestrator 或 AI 补全接口，再由 agent 或 prompt 模板消费，见 [novel_agent/api/routes/workflow_steps.py](../novel_agent/api/routes/workflow_steps.py)、[novel_agent/api/routes/planning.py](../novel_agent/api/routes/planning.py) 与 [novel_agent/infrastructure.py](../novel_agent/infrastructure.py).
 6. 生成链路中的上下文组装统一收敛到 [novel_agent/context_builder.py](../novel_agent/context_builder.py)，避免在 agent、路由和模板里重复维护上下文筛选规则。
 
 ## 关键字段映射
@@ -24,9 +24,9 @@
 | `target_chapters_per_volume` | `outline.chapters_per_volume`、`chapter_plan.target_chapter_count` | 章节密度 | 前端自动回填 |
 | `tone` | `story_bible.notes` | 风格与氛围 | 会合并进故事圣经补充说明 |
 | `style` | `story_bible.notes` | 风格约束 | 会合并进故事圣经补充说明 |
-| `outline_focus` | `outline.focus_points`、`outline.notes`、`characters.notes`、`consistency.known_rules` | 总纲关注点 | 结构页与角色框架页会自动回填 |
-| `core_requirements` | `requirements.notes`、`outline.notes`、`chapter_plan.notes`、`chapter.notes`、`revision.notes`、`consistency.known_rules`、`memory.notes` | 核心约束 | 会合并进相关步骤的补充说明 |
-| `forbidden_elements` | `requirements.notes`、`outline.notes`、`chapter_plan.notes`、`chapter.notes`、`revision.notes`、`consistency.known_rules`、`memory.notes` | 禁忌元素 | 会合并进相关步骤的补充说明 |
+| `outline_focus` | `outline.focus_points`、`outline.notes`、`characters.notes`、`consistency.known_rules` | 总纲关注点 | 结构页会自动回填 |
+| `core_requirements` | `requirements.notes`、`outline.notes`、`volume_outline.notes`、`rough_chapter_plan.notes`、`chapter_plan.notes`、`chapter.notes`、`revision.notes`、`consistency.known_rules`、`memory.notes` | 核心约束 | 会合并进相关步骤的补充说明 |
+| `forbidden_elements` | `requirements.notes`、`outline.notes`、`volume_outline.notes`、`rough_chapter_plan.notes`、`chapter_plan.notes`、`chapter.notes`、`revision.notes`、`consistency.known_rules`、`memory.notes` | 禁忌元素 | 会合并进相关步骤的补充说明 |
 
 ## 步骤字段与后端字段
 
@@ -63,11 +63,25 @@
 - 路由：`POST /projects/{project_id}/volume-outline`
 - 说明：`target_words` 和 `target_chapter_count` 也会做项目派生回填。
 
+### 粗卷纲
+
+- 前端表单字段：`volume_count`、`chapters_per_volume`、`notes`、`temperature`、`max_tokens`
+- 后端请求模型：`RoughVolumeOutlineRequest`
+- 路由：`POST /projects/{project_id}/rough-volume-outline`
+- 说明：这一步只输出全书所有卷的粗纲，不拆成单卷。
+
 ### 章节计划
 
-- 前端表单字段：`volume_index`、`chapter_index`、`chapter_title`、`chapter_summary`、`chapter_type`、`pov_character`、`protagonist_present`、`conflict`、`hook`、`target_words`、`min_words`、`characters`、`introduced_characters`、`scene_summaries`、`confirmed`、`plan_notes`、`notes`、`temperature`、`max_tokens`
+- 前端表单字段：`volume_index`、`chapter_index`、`chapter_title`、`chapter_summary`、`chapter_type`、`pov_character`、`protagonist_present`、`conflict`、`hook`、`target_words`、`min_words`、`characters`、`introduced_characters`、`scene_summaries`、`plan_notes`、`notes`、`temperature`、`max_tokens`
 - 后端请求模型：`ChapterPlanRequest`
 - 路由：`POST /projects/{project_id}/chapter-plan`
+
+### 粗章纲
+
+- 前端表单字段：`volume_index`、`target_chapter_count`、`notes`、`temperature`、`max_tokens`
+- 后端请求模型：`RoughChapterPlanRequest`
+- 路由：`POST /projects/{project_id}/rough-chapter-plan`
+- 说明：这一步只输出当前卷所有章节的粗略安排，不拆成单章。
 
 ### 章节正文
 
@@ -102,7 +116,7 @@
 - 直接上游产物不会原样整段灌进 prompt，而是压缩成结构化摘要视图：`overview`、`key_facts`、`constraints`、`open_questions`、`best_for_steps`，再附少量正文节选，避免长 artifact 淹没字段补全。
 - 生成链路按阶段选择上下文：总纲读项目简报和核心上游摘要，卷纲读总纲摘要，章节计划读卷纲摘要与相关设定摘要，章节正文读章节计划摘要和写作约束；字段补全则只读当前字段、同阶段表单约束和直接上游摘要。
 - 生成链路现在统一采用单次结构化 payload：模型必须一次返回 `content`、`overview`、`key_facts`、`constraints`、`open_questions`、`best_for_reason`，后端只负责规范化和落库，不再单独做正文后的摘要切分。
-- 总纲阶段会直接产出各卷粗纲和粗章节计划；卷纲阶段通过 `chapter_briefs` 和 `confirmed` 把“粗卷纲 -> 人工确认 -> 完整卷纲”串起来；章节计划阶段继续用 `confirmed` 把“粗章节计划 -> 人工确认 -> 完整章节计划”串起来。
+- 总纲阶段只产出全书总纲；粗卷纲阶段产出全书所有卷的粗纲；卷纲阶段产出当前卷的完整卷纲；粗章纲阶段产出当前卷的粗章节计划；章节计划阶段产出当前章的完整章节计划。
 - 前端实现见 [frontend/assets/js/workspace-utils.js](../frontend/assets/js/workspace-utils.js)。
 - 后端实现见 [novel_agent/api/routes/ai.py](../novel_agent/api/routes/ai.py)。
 

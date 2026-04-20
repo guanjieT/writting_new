@@ -9,7 +9,7 @@
 
 代码语法最低需要 Python 3.10；当前机器如果没有 3.10+，可以先创建虚拟环境，但正式运行仍建议切到 3.10 或更高版本。
 
-前端已经按多页面方式拆分完成，浏览器入口分别是 `/`、`/workflow`、`/outline` 和 `/review`。项目中心负责创建、选择和编辑项目基础设定，编辑后会清空依赖产物并回到起点；工作流页负责按模块执行生成步骤，大纲页聚焦总纲/卷纲/章节计划，审查页负责查看产物与任务状态。页面之间会通过 `project_id` 和本地存储保持当前项目，不会在切页时丢失选择。工作流页与结构台里的参数字段都提供了字段级 `AI 补全` 按钮，可以在不重跑整步的前提下先补齐局部输入；补全请求会同时带上当前字段、同阶段表单约束和直接上游产物，例如角色框架里的 `role_capacity` 会进入 `core_roles` 和 `role_slots` 的补全上下文。现在每个 artifact 都会同时保存完整正文和结构化摘要，生成阶段要求模型一次性返回 `content`、`overview`、`key_facts`、`constraints`、`open_questions` 和 `best_for_reason`，后端会把 `content` 作为正文写入，把其余字段落到摘要里。总纲会先产出各卷的粗纲和粗章节计划；卷纲阶段新增 `chapter_briefs` 和 `confirmed`，用于“粗卷纲 -> 人工微调确认 -> 完整卷纲”的流程；章节计划继续沿用 `confirmed`，用于“粗章节计划 -> 人工微调确认 -> 完整章节计划”的流程。总纲、卷纲、章节计划和章节正文现在分别使用不同的上下文档位：总纲只读项目简报和上游核心摘要，卷纲读总纲摘要和当前卷约束，章节计划读卷纲摘要与相关设定摘要，章节正文读章节计划摘要和写作约束，避免把整份项目数据重复灌进 prompt。总纲页的 `chapters_per_volume` 现在会作为硬性目标传入生成流程，生成的每卷章节数不应再回落到默认 12。需求分析页会自动回填项目中心的 `premise -> requirements_text`、`target_audience -> audience`，并把项目约束合并到补充说明中；总纲页会自动回填 `outline_focus -> focus_points`，一致性页会把项目规则合并到 `known_rules`，让项目中心输入能更直接地进入步骤表单。
+前端已经按多页面方式拆分完成，浏览器入口分别是 `/`、`/workflow`、`/outline`、`/volume-outline`、`/chapter-plan` 和 `/review`。项目中心负责创建、选择和编辑项目基础设定，编辑后会清空依赖产物并回到起点；工作流页负责按模块执行生成步骤，总纲页只管总纲和全书粗卷纲，卷纲页只管当前卷的完整卷纲和粗章纲，章节计划页只管当前章的完整章节计划，审查页负责查看产物与任务状态。页面之间会通过 `project_id` 和本地存储保持当前项目，不会在切页时丢失选择。工作流页与结构页里的参数字段都提供了字段级 `AI 补全` 按钮，可以在不重跑整步的前提下先补齐局部输入；补全请求会同时带上当前字段、同阶段表单约束和直接上游产物，例如角色框架里的 `role_capacity` 会进入 `core_roles` 和 `role_slots` 的补全上下文。现在每个 artifact 都会同时保存完整正文和结构化摘要，生成阶段要求模型一次性返回 `content`、`overview`、`key_facts`、`constraints`、`open_questions` 和 `best_for_reason`，后端会把 `content` 作为正文写入，把其余字段落到摘要里。总纲拆成了 `总纲 -> 粗卷纲 -> 完整卷纲 -> 粗章纲 -> 完整章节计划` 的五段式锁式流水线，不再使用 `confirmed` 作为粗细切换开关。总纲、卷纲、章节计划和章节正文现在分别使用不同的上下文档位：总纲只读项目简报和上游核心摘要，卷纲读总纲摘要和当前卷约束，章节计划读卷纲摘要与相关设定摘要，章节正文读章节计划摘要和写作约束，避免把整份项目数据重复灌进 prompt。总纲页的 `chapters_per_volume` 现在会作为硬性目标传入生成流程，生成的每卷章节数不应再回落到默认 12。需求分析页会自动回填项目中心的 `premise -> requirements_text`、`target_audience -> audience`，并把项目约束合并到补充说明中；总纲页会自动回填 `outline_focus -> focus_points`，一致性页会把项目规则合并到 `known_rules`，让项目中心输入能更直接地进入步骤表单。
 
 参数映射与传递审计文档见 [docs/parameter-flow-audit.md](docs/parameter-flow-audit.md)。
 
@@ -41,7 +41,9 @@ uvicorn novel_agent.main:app --reload --host 127.0.0.1 --port 8001
 
 - `http://127.0.0.1:8001/`：项目中心
 - `http://127.0.0.1:8001/workflow`：模块工作流
-- `http://127.0.0.1:8001/outline`：大纲与计划
+- `http://127.0.0.1:8001/outline`：总纲页面
+- `http://127.0.0.1:8001/volume-outline`：卷纲页面
+- `http://127.0.0.1:8001/chapter-plan`：章节计划页面
 - `http://127.0.0.1:8001/review`：审查面板
 
 ## 环境变量
@@ -90,6 +92,9 @@ novel_agent_clean/
     ├── frontend/
     │   ├── index.html
     │   ├── workflow.html
+    │   ├── outline.html
+    │   ├── volume-outline.html
+    │   ├── chapter-plan.html
     │   ├── review.html
     │   └── assets/
     │       ├── styles.css
@@ -99,6 +104,7 @@ novel_agent_clean/
     │           ├── index-page.js
     │           ├── review-page.js
     │           ├── state.js
+    │           ├── structure-page.js
     │           └── workflow-page.js
     ├── agents.py
     ├── config.py
@@ -124,19 +130,21 @@ novel_agent_clean/
 | [novel_agent/agents.py](novel_agent/agents.py) | Agent 定义，负责把项目上下文翻译成 prompt 并调用模型 | `AgentDependencies`、`BaseAgent`、`RequirementAgent`、`StoryBibleAgent`、`CharacterAgent`、`OutlineAgent`、`VolumeOutlineAgent`、`ChapterPlanAgent`、`ChapterAgent`、`RevisionAgent`、`ConsistencyAgent`、`MemoryAgent`、`build_agent_registry()` |
 | [novel_agent/orchestrator.py](novel_agent/orchestrator.py) | 工作流编排器，负责 step 路由、项目状态更新、审计 | `NovelOrchestrator.build()`、`get_project()`、`list_projects()`、`dispatch()`、`create_project()`、`project_snapshot()` |
 | [novel_agent/container.py](novel_agent/container.py) | 依赖注入容器，统一组装全部服务 | `AppContainer`、`build_container()`、`build_llm_provider()` |
-| [novel_agent/api/schemas.py](novel_agent/api/schemas.py) | FastAPI 请求体和响应体模型 | `ProjectCreateRequest`、`FieldCompletionRequest`、`FieldCompletionResponse`、`RequirementsRequest`、`StoryBibleRequest`、`CharacterRequest`、`OutlineRequest`、`VolumeOutlineRequest`、`ChapterPlanRequest`、`ChapterRequest`、`RevisionRequest`、`ConsistencyRequest`、`MemoryRequest`、`ErrorResponse` |
+| [novel_agent/api/schemas.py](novel_agent/api/schemas.py) | FastAPI 请求体和响应体模型 | `ProjectCreateRequest`、`FieldCompletionRequest`、`FieldCompletionResponse`、`RequirementsRequest`、`StoryBibleRequest`、`CharacterRequest`、`OutlineRequest`、`RoughVolumeOutlineRequest`、`VolumeOutlineRequest`、`RoughChapterPlanRequest`、`ChapterPlanRequest`、`ChapterRequest`、`RevisionRequest`、`ConsistencyRequest`、`MemoryRequest`、`ErrorResponse` |
 | [novel_agent/api/deps.py](novel_agent/api/deps.py) | FastAPI 依赖注入入口 | `get_container(request)` |
 | [novel_agent/api/app.py](novel_agent/api/app.py) | FastAPI 应用工厂、CORS、异常处理、路由装配 | `create_app(config=None)`、`app` |
-| [novel_agent/api/routes/frontend.py](novel_agent/api/routes/frontend.py) | 前端页面路由 | `GET /`、`GET /workflow`、`GET /review` |
+| [novel_agent/api/routes/frontend.py](novel_agent/api/routes/frontend.py) | 前端页面路由 | `GET /`、`GET /workflow`、`GET /outline`、`GET /volume-outline`、`GET /chapter-plan`、`GET /review` |
 | [novel_agent/api/routes/workflow.py](novel_agent/api/routes/workflow.py) | 工作流规范接口 | `GET /workflow/spec` |
 | [novel_agent/api/routes/health.py](novel_agent/api/routes/health.py) | 健康检查路由 | `GET /health` |
 | [novel_agent/api/routes/projects.py](novel_agent/api/routes/projects.py) | 项目 CRUD、基础设定更新、模块删除和快照 | `POST /projects`、`PUT /projects/{project_id}`、`GET /projects`、`GET /projects/{project_id}`、`GET /projects/{project_id}/snapshot`、`DELETE /projects/{project_id}/artifacts/{artifact_key}` |
 | [novel_agent/api/routes/ai.py](novel_agent/api/routes/ai.py) | 字段级 AI 补全接口 | `POST /projects/{project_id}/field-completion` |
-| [novel_agent/api/routes/planning.py](novel_agent/api/routes/planning.py) | 卷纲与章节计划入口 | `POST /projects/{project_id}/volume-outline`、`POST /projects/{project_id}/chapter-plan` |
+| [novel_agent/api/routes/planning.py](novel_agent/api/routes/planning.py) | 卷纲与章节计划入口 | `POST /projects/{project_id}/rough-volume-outline`、`POST /projects/{project_id}/volume-outline`、`POST /projects/{project_id}/rough-chapter-plan`、`POST /projects/{project_id}/chapter-plan` |
 | [novel_agent/api/routes/workflow_steps.py](novel_agent/api/routes/workflow_steps.py) | 基础步骤入口和任务查询 | `POST /projects/{project_id}/requirements`、`story-bible`、`characters`、`outline`、`chapters`、`revision`、`consistency`、`memory`、`GET /projects/{project_id}/tasks`、`GET /tasks/{task_id}`、`POST /tasks/{task_id}/cancel` |
 | [novel_agent/frontend/index.html](novel_agent/frontend/index.html) | 项目中心页面 | 创建项目、选择项目、进入工作流 |
 | [novel_agent/frontend/workflow.html](novel_agent/frontend/workflow.html) | 顺序工作流页面 | 按步骤提交生成任务、自动轮询任务结果 |
-| [novel_agent/frontend/outline.html](novel_agent/frontend/outline.html) | 大纲与计划页面 | 聚焦总纲、卷纲和章节计划的模块卡片 |
+| [novel_agent/frontend/outline.html](novel_agent/frontend/outline.html) | 总纲页面 | 聚焦总纲和全书粗卷纲 |
+| [novel_agent/frontend/volume-outline.html](novel_agent/frontend/volume-outline.html) | 卷纲页面 | 聚焦当前卷的完整卷纲和粗章纲 |
+| [novel_agent/frontend/chapter-plan.html](novel_agent/frontend/chapter-plan.html) | 章节计划页面 | 聚焦当前章的完整章节计划 |
 | [novel_agent/frontend/review.html](novel_agent/frontend/review.html) | 审查面板页面 | 查看任务、产物、快照 |
 | [novel_agent/frontend/assets/js/api-client.js](novel_agent/frontend/assets/js/api-client.js) | 前端 API 适配层 | `requestJson()`、`api.*`、`waitForTask()` |
 | [novel_agent/frontend/assets/js/state.js](novel_agent/frontend/assets/js/state.js) | 前端状态与参数转换 | `getSelectedProjectId()`、`setSelectedProjectId()`、`listFromText()` |
@@ -191,9 +199,6 @@ novel_agent_clean/
   - 无参数。
 - `ProjectService.save(project)`
   - `project`：完整项目对象。
-- `ProjectService.add_artifact(project_id, artifact, step=None)`
-  - `artifact`：生成结果。
-  - `step`：可选工作流步。
 - `ProjectService.remove_artifact(project_id, artifact_key)`
   - `artifact_key`：要删除的模块产物键，会连带清理依赖它的后续模块。
 - `AuditService.record(action, project_id=None, actor='system', message='', payload=None)`
@@ -303,6 +308,16 @@ novel_agent_clean/
 - `temperature: number`
 - `max_tokens: number`
 
+### 粗卷纲
+
+`POST /projects/{project_id}/rough-volume-outline`
+
+- `volume_count: number`
+- `chapters_per_volume: number`
+- `notes: string[]`
+- `temperature: number`
+- `max_tokens: number`
+
 ### 章节计划
 
 `POST /projects/{project_id}/chapter-plan`
@@ -321,8 +336,17 @@ novel_agent_clean/
 - `characters: string[]`
 - `introduced_characters: string[]`
 - `scene_summaries: string[]`
-- `confirmed: boolean`
 - `plan_notes: string`
+- `notes: string[]`
+- `temperature: number`
+- `max_tokens: number`
+
+### 粗章纲
+
+`POST /projects/{project_id}/rough-chapter-plan`
+
+- `volume_index: number`
+- `target_chapter_count: number`
 - `notes: string[]`
 - `temperature: number`
 - `max_tokens: number`

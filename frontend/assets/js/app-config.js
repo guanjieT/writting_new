@@ -5,9 +5,11 @@ export const FALLBACK_WORKFLOW_STEPS = [
   { key: 'requirements', label: '需求分析', depends_on: [] },
   { key: 'story_bible', label: '世界观设定', depends_on: ['requirements'] },
   { key: 'characters', label: '角色框架', depends_on: ['requirements', 'story_bible'] },
-  { key: 'outline', label: '总纲生成', depends_on: ['requirements', 'story_bible', 'characters'] },
-  { key: 'volume_outline', label: '卷纲生成', depends_on: ['outline'] },
-  { key: 'chapter_plan', label: '章节计划', depends_on: ['volume_outline'] },
+  { key: 'outline', label: '总纲', depends_on: ['requirements', 'story_bible', 'characters'] },
+  { key: 'rough_volume_outline', label: '粗卷纲', depends_on: ['outline'] },
+  { key: 'volume_outline', label: '完善卷纲', depends_on: ['rough_volume_outline'] },
+  { key: 'rough_chapter_plan', label: '粗章纲', depends_on: ['volume_outline'] },
+  { key: 'chapter_plan', label: '完善章节计划', depends_on: ['rough_chapter_plan'] },
   { key: 'chapter', label: '章节生成', depends_on: ['chapter_plan'] },
   { key: 'revision', label: '修订', depends_on: ['chapter'] },
   { key: 'consistency', label: '一致性检查', depends_on: ['chapter'] },
@@ -69,9 +71,9 @@ export const STEP_META = {
     label: '总纲',
     group: 'structure',
     page: 'outline',
-    description: '先定义全书级别的目标、节奏和阶段推进，再顺带产出各卷粗纲和粗章节计划。',
+    description: '先定义全书级别的目标、节奏和阶段推进，再为后续粗卷纲提供总蓝图。',
     objectName: '总纲',
-    reviewPoints: ['开端—发展—转折—收束是否成链', '每卷粗纲是否已经给出', '全书目标与题材预期是否一致'],
+    reviewPoints: ['开端—发展—转折—收束是否成链', '全书目标与题材预期是否一致', '是否足以支撑后续卷级拆解'],
     fields: [
       { key: 'volume_count', label: '目标卷数', type: 'number', defaultValue: 1 },
       { key: 'chapters_per_volume', label: '每卷章节数', type: 'number', defaultValue: 12 },
@@ -82,13 +84,29 @@ export const STEP_META = {
     ],
     endpoint: api.runOutline,
   },
-  volume_outline: {
-    label: '卷纲',
+  rough_volume_outline: {
+    label: '粗卷纲',
     group: 'structure',
     page: 'outline',
-    description: '先生成单卷粗纲，人工微调并确认后，再把这一卷展开成完整卷纲。',
+    description: '一次生成全书所有卷的粗略结构，不拆成单卷。',
+    objectName: '粗卷纲',
+    reviewPoints: ['是否覆盖所有卷', '卷间节奏是否连贯', '每卷是否保留后续细化空间'],
+    fields: [
+      { key: 'volume_count', label: '目标卷数', type: 'number', defaultValue: 1 },
+      { key: 'chapters_per_volume', label: '每卷章节数', type: 'number', defaultValue: 12 },
+      { key: 'notes', label: '补充说明', type: 'textarea', rows: 4, list: true },
+      { key: 'temperature', label: '生成温度', type: 'number', step: '0.1', defaultValue: 0.7, advanced: true },
+      { key: 'max_tokens', label: '最大输出', type: 'number', defaultValue: 1600, advanced: true },
+    ],
+    endpoint: api.runRoughVolumeOutline,
+  },
+  volume_outline: {
+    label: '完善卷纲',
+    group: 'structure',
+    page: 'volume-outline',
+    description: '基于粗卷纲，完善当前卷的完整卷纲。',
     objectName: '卷纲',
-    reviewPoints: ['卷目标是否独立完整', '卷内粗章纲是否可编辑', '确认后是否已细化到可执行层级'],
+    reviewPoints: ['卷目标是否独立完整', '是否与粗卷纲对应', '是否可直接进入粗章纲阶段'],
     fields: [
       { key: 'volume_index', label: '卷序号', type: 'number', defaultValue: 1 },
       { key: 'volume_title', label: '卷标题', type: 'text', placeholder: '例如：第一卷·入局' },
@@ -96,23 +114,37 @@ export const STEP_META = {
       { key: 'volume_goal', label: '卷目标', type: 'text' },
       { key: 'volume_conflict', label: '卷冲突', type: 'textarea', rows: 4 },
       { key: 'volume_hook', label: '卷尾钩子', type: 'textarea', rows: 3 },
-      { key: 'chapter_briefs', label: '粗章节计划', type: 'textarea', rows: 6, list: true, placeholder: '一行一章，先写粗略章节安排，确认后再细化。' },
       { key: 'target_words', label: '卷目标字数', type: 'number', defaultValue: 0 },
       { key: 'target_chapter_count', label: '卷目标章节数', type: 'number', defaultValue: 0 },
-      { key: 'confirmed', label: '卷纲确认', type: 'checkbox', defaultValue: false },
       { key: 'notes', label: '补充说明', type: 'textarea', rows: 4, list: true },
       { key: 'temperature', label: '生成温度', type: 'number', step: '0.1', defaultValue: 0.7, advanced: true },
       { key: 'max_tokens', label: '最大输出', type: 'number', defaultValue: 1400, advanced: true },
     ],
     endpoint: api.runVolumeOutline,
   },
-  chapter_plan: {
-    label: '章节计划',
+  rough_chapter_plan: {
+    label: '粗章纲',
     group: 'structure',
-    page: 'outline',
-    description: '先生成粗章节计划，确认后再细化成可直接写正文的完整章节计划。',
+    page: 'volume-outline',
+    description: '一次生成当前卷所有章节的粗计划。',
+    objectName: '粗章纲',
+    reviewPoints: ['卷内章节节奏是否成链', '章节之间是否有铺垫和呼应', '是否保留了细化空间'],
+    fields: [
+      { key: 'volume_index', label: '卷序号', type: 'number', defaultValue: 1 },
+      { key: 'target_chapter_count', label: '章节数', type: 'number', defaultValue: 0 },
+      { key: 'notes', label: '补充说明', type: 'textarea', rows: 4, list: true },
+      { key: 'temperature', label: '生成温度', type: 'number', step: '0.1', defaultValue: 0.7, advanced: true },
+      { key: 'max_tokens', label: '最大输出', type: 'number', defaultValue: 1600, advanced: true },
+    ],
+    endpoint: api.runRoughChapterPlan,
+  },
+  chapter_plan: {
+    label: '完善章节计划',
+    group: 'structure',
+    page: 'chapter-plan',
+    description: '基于粗章纲，完善当前章的完整章节计划。',
     objectName: '章节计划',
-    reviewPoints: ['章节目标是否单一', '粗计划是否可编辑', '确认后是否已细化到可直接写作'],
+    reviewPoints: ['章节目标是否单一', '是否与粗章纲对应', '是否已细化到可直接写作'],
     fields: [
       { key: 'volume_index', label: '卷序号', type: 'number', defaultValue: 1 },
       { key: 'chapter_index', label: '章节序号', type: 'number', defaultValue: 1 },
@@ -128,7 +160,6 @@ export const STEP_META = {
       { key: 'characters', label: '本章人物', type: 'textarea', rows: 3, list: true },
       { key: 'introduced_characters', label: '新登场人物', type: 'textarea', rows: 3, list: true },
       { key: 'scene_summaries', label: '场景摘要', type: 'textarea', rows: 5, list: true },
-      { key: 'confirmed', label: '计划确认', type: 'checkbox', defaultValue: false },
       { key: 'plan_notes', label: '计划备注', type: 'textarea', rows: 3 },
       { key: 'notes', label: '补充说明', type: 'textarea', rows: 3, list: true },
       { key: 'temperature', label: '生成温度', type: 'number', step: '0.1', defaultValue: 0.7, advanced: true },
@@ -211,13 +242,21 @@ export const PAGE_STEP_GROUPS = {
     { key: 'writing', label: '正文推进', steps: ['chapter', 'revision', 'consistency', 'memory'] },
   ],
   outline: [
-    { key: 'structure', label: '结构树', steps: ['outline', 'volume_outline', 'chapter_plan'] },
+    { key: 'structure', label: '全书结构', steps: ['outline', 'rough_volume_outline'] },
+  ],
+  'volume-outline': [
+    { key: 'structure', label: '卷级结构', steps: ['volume_outline', 'rough_chapter_plan'] },
+  ],
+  'chapter-plan': [
+    { key: 'structure', label: '章级结构', steps: ['chapter_plan'] },
   ],
 };
 
 export const REVIEW_GROUPS = [
   { key: 'setting', label: '设定资产', steps: ['requirements', 'story_bible', 'characters'] },
-  { key: 'structure', label: '结构对象', steps: ['outline', 'volume_outline', 'chapter_plan'] },
+  { key: 'structure-outline', label: '总纲与粗卷纲', steps: ['outline', 'rough_volume_outline'] },
+  { key: 'structure-volume', label: '卷纲与粗章纲', steps: ['volume_outline', 'rough_chapter_plan'] },
+  { key: 'structure-chapter', label: '章节计划', steps: ['chapter_plan'] },
   { key: 'writing', label: '正文与修订', steps: ['chapter', 'revision'] },
   { key: 'audit', label: '一致性与记忆', steps: ['consistency', 'memory'] },
 ];
@@ -249,22 +288,83 @@ export function getStepDependencies(step, dependencyMap = {}) {
 }
 
 export function getArtifact(snapshot, step) {
-  return snapshot?.artifacts?.[step] || null;
+  return getArtifactsForStep(snapshot, step)[0] || null;
+}
+
+const ARTIFACT_SCOPE_KIND = {
+  outline: 'project',
+  rough_volume_outline: 'project',
+  volume_outline: 'volume',
+  rough_chapter_plan: 'volume',
+  chapter_plan: 'chapter',
+  chapter: 'chapter',
+  revision: 'chapter',
+  consistency: 'chapter',
+  memory: 'chapter',
+};
+
+function normalizeScopeSelection(selection = {}) {
+  return {
+    volumeIndex: Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1),
+    chapterIndex: Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1),
+  };
+}
+
+export function getStepScopeKind(step) {
+  return ARTIFACT_SCOPE_KIND[step] || 'project';
+}
+
+export function getArtifactsForStep(snapshot, step) {
+  const artifacts = Object.values(snapshot?.artifacts || {});
+  return artifacts.filter((artifact) => artifact?.metadata?.step === step || artifact?.key === step);
+}
+
+export function getScopedArtifact(snapshot, step, selection = {}) {
+  const scopeKind = getStepScopeKind(step);
+  const normalized = normalizeScopeSelection(selection);
+  return getArtifactsForStep(snapshot, step).find((artifact) => {
+    const metadata = artifact?.metadata || {};
+    if ((metadata.scope_kind || 'project') !== scopeKind) {
+      return false;
+    }
+    if (scopeKind === 'volume') {
+      return Number(metadata.volume_index || 0) === normalized.volumeIndex;
+    }
+    if (scopeKind === 'chapter') {
+      return Number(metadata.volume_index || 0) === normalized.volumeIndex && Number(metadata.chapter_index || 0) === normalized.chapterIndex;
+    }
+    return true;
+  }) || null;
+}
+
+function dependencySelectionFor(step, dependency, selection = {}) {
+  const normalized = normalizeScopeSelection(selection);
+  const dependencyScope = getStepScopeKind(dependency);
+  if (dependencyScope === 'volume') {
+    return { volumeIndex: normalized.volumeIndex };
+  }
+  if (dependencyScope === 'chapter') {
+    return { volumeIndex: normalized.volumeIndex, chapterIndex: normalized.chapterIndex };
+  }
+  return {};
+}
+
+function dependencyArtifactFor(step, dependency, snapshot, selection = {}) {
+  return getScopedArtifact(snapshot, dependency, dependencySelectionFor(step, dependency, selection));
 }
 
 export function completedSteps(snapshot) {
-  return new Set(Object.keys(snapshot?.artifacts || {}));
+  return new Set(Object.values(snapshot?.artifacts || {}).map((artifact) => artifact?.metadata?.step || artifact?.key).filter(Boolean));
 }
 
-export function isUnlocked(step, snapshot, dependencyMap) {
-  const done = completedSteps(snapshot);
-  return getStepDependencies(step, dependencyMap).every((item) => done.has(item));
+export function isUnlocked(step, snapshot, dependencyMap, selection = {}) {
+  return getStepDependencies(step, dependencyMap).every((item) => Boolean(dependencyArtifactFor(step, item, snapshot, selection)));
 }
 
-export function getStepStatus(step, snapshot, dependencyMap, tasks = []) {
-  const artifact = getArtifact(snapshot, step);
+export function getStepStatus(step, snapshot, dependencyMap, tasks = [], selection = {}) {
+  const artifact = getScopedArtifact(snapshot, step, selection);
   if (artifact) {
-    return { tone: 'success', text: '已产出' };
+    return artifact?.metadata?.stale ? { tone: 'warn', text: '已失效' } : { tone: 'success', text: '已产出' };
   }
 
   const latestTask = [...tasks]
@@ -277,7 +377,7 @@ export function getStepStatus(step, snapshot, dependencyMap, tasks = []) {
   if (latestTask?.status === 'pending' || latestTask?.status === 'running') {
     return { tone: 'accent', text: '执行中' };
   }
-  if (isUnlocked(step, snapshot, dependencyMap)) {
+  if (isUnlocked(step, snapshot, dependencyMap, selection)) {
     return { tone: 'warn', text: '待处理' };
   }
   return { tone: 'soft', text: '未解锁' };
@@ -288,7 +388,9 @@ const PROJECT_NOTE_SOURCES = {
   story_bible: ['tone', 'style'],
   characters: ['core_requirements', 'forbidden_elements', 'outline_focus'],
   outline: ['outline_focus', 'core_requirements', 'forbidden_elements'],
+  rough_volume_outline: ['outline_focus', 'core_requirements', 'forbidden_elements'],
   volume_outline: ['outline_focus', 'core_requirements'],
+  rough_chapter_plan: ['outline_focus', 'core_requirements'],
   chapter_plan: ['core_requirements', 'forbidden_elements'],
   chapter: ['core_requirements', 'forbidden_elements'],
   revision: ['core_requirements', 'forbidden_elements'],
@@ -347,7 +449,7 @@ function cleanOutlineLine(value) {
 }
 
 function parseOutlineVolumeSections(snapshot) {
-  const outlineArtifact = getArtifact(snapshot, 'outline');
+  const outlineArtifact = getArtifact(snapshot, 'rough_volume_outline') || getArtifact(snapshot, 'outline');
   const generatedContent = outlineArtifact?.metadata?.generated_payload?.content || outlineArtifact?.content || '';
   const text = String(generatedContent || '').trim();
   if (!text) {
@@ -432,6 +534,106 @@ function parseOutlineVolumeSections(snapshot) {
   return sections;
 }
 
+function parseRoughChapterPlanSections(snapshot) {
+  const roughArtifact = getArtifact(snapshot, 'rough_chapter_plan');
+  const generatedContent = roughArtifact?.metadata?.generated_payload?.content || roughArtifact?.content || '';
+  const text = String(generatedContent || '').trim();
+  if (!text) {
+    return [];
+  }
+
+  const chapters = [];
+  let current = null;
+  let inScenes = false;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    const chapterMatch = line.match(/^第([一二三四五六七八九十百零两\d]+)章[:：]\s*(.+)$/);
+    if (chapterMatch) {
+      if (current) {
+        chapters.push(current);
+      }
+      current = {
+        index: parseChineseNumber(chapterMatch[1]),
+        title: chapterMatch[2].trim(),
+        summary: '',
+        chapter_type: '',
+        pov_character: '',
+        conflict: '',
+        hook: '',
+        scene_summaries: [],
+      };
+      inScenes = false;
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    const summaryMatch = line.match(/^[\-•*\s]*章节摘要[:：]\s*(.+)$/);
+    if (summaryMatch) {
+      current.summary = summaryMatch[1].trim();
+      continue;
+    }
+
+    const typeMatch = line.match(/^[\-•*\s]*章节类型[:：]\s*(.+)$/);
+    if (typeMatch) {
+      current.chapter_type = typeMatch[1].trim();
+      continue;
+    }
+
+    const povMatch = line.match(/^[\-•*\s]*视角人物[:：]\s*(.+)$/);
+    if (povMatch) {
+      current.pov_character = povMatch[1].trim();
+      continue;
+    }
+
+    const conflictMatch = line.match(/^[\-•*\s]*核心冲突[:：]\s*(.+)$/);
+    if (conflictMatch) {
+      current.conflict = conflictMatch[1].trim();
+      continue;
+    }
+
+    const hookMatch = line.match(/^[\-•*\s]*章节钩子[:：]\s*(.+)$/);
+    if (hookMatch) {
+      current.hook = hookMatch[1].trim();
+      continue;
+    }
+
+    if (/^[\-•*\s]*场景粗纲[:：]\s*$/.test(line) || /^[\-•*\s]*场景摘要[:：]\s*$/.test(line)) {
+      inScenes = true;
+      continue;
+    }
+
+    if (/^[\-•*\s]*场景粗纲[:：]\s*(.+)$/.test(line) || /^[\-•*\s]*场景摘要[:：]\s*(.+)$/.test(line)) {
+      inScenes = true;
+      const scene = cleanOutlineLine(line.replace(/^[\-•*\s]*(场景粗纲|场景摘要)[:：]\s*/, ''));
+      if (scene) {
+        current.scene_summaries.push(scene);
+      }
+      continue;
+    }
+
+    if (inScenes) {
+      const scene = cleanOutlineLine(line);
+      if (scene) {
+        current.scene_summaries.push(scene);
+      }
+    }
+  }
+
+  if (current) {
+    chapters.push(current);
+  }
+
+  return chapters;
+}
+
 export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
   const sections = parseOutlineVolumeSections(snapshot);
   if (!sections.length) {
@@ -465,7 +667,32 @@ export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
   };
 }
 
-export function renderInputValue(field, project, snapshot) {
+export function extractChapterPlanDefaults(snapshot, volumeIndex = 1, chapterIndex = 1) {
+  const chapters = parseRoughChapterPlanSections(snapshot);
+  if (!chapters.length) {
+    return null;
+  }
+
+  const safeIndex = Math.max(Number(chapterIndex) || 1, 1);
+  const selected = chapters.find((chapter) => chapter.index === safeIndex) || chapters[0];
+  if (!selected) {
+    return null;
+  }
+
+  return {
+    volume_index: Math.max(Number(volumeIndex) || 1, 1),
+    chapter_index: selected.index,
+    chapter_title: selected.title || '',
+    chapter_summary: selected.summary || '',
+    chapter_type: selected.chapter_type || '主线推进章',
+    pov_character: selected.pov_character || '',
+    conflict: selected.conflict || '',
+    hook: selected.hook || '',
+    scene_summaries: selected.scene_summaries,
+  };
+}
+
+export function renderInputValue(field, project, snapshot, selection = {}) {
   const projectInput = project?.input || {};
   if (field.key === 'requirements_text') {
     return projectInput.premise || '';
@@ -477,7 +704,7 @@ export function renderInputValue(field, project, snapshot) {
     return projectInput.target_volume_count || 1;
   }
   if (field.stepKey === 'volume_outline') {
-    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, 1);
+    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1);
     if (outlineDefaults) {
       if (field.key === 'volume_title') {
         return outlineDefaults.volume_title || '';
@@ -499,6 +726,36 @@ export function renderInputValue(field, project, snapshot) {
       }
       if (field.key === 'target_chapter_count' && outlineDefaults.target_chapter_count) {
         return outlineDefaults.target_chapter_count;
+      }
+    }
+  }
+  if (field.stepKey === 'rough_chapter_plan' && field.key === 'target_chapter_count') {
+    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1);
+    return outlineDefaults?.target_chapter_count || projectInput.target_chapters_per_volume || 12;
+  }
+  if (field.stepKey === 'chapter_plan') {
+    const chapterDefaults = extractChapterPlanDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1, Number(selection.chapterIndex || selection.chapter_index || 1) || 1);
+    if (chapterDefaults) {
+      if (field.key === 'chapter_title') {
+        return chapterDefaults.chapter_title || '';
+      }
+      if (field.key === 'chapter_summary') {
+        return chapterDefaults.chapter_summary || '';
+      }
+      if (field.key === 'chapter_type') {
+        return chapterDefaults.chapter_type || '主线推进章';
+      }
+      if (field.key === 'pov_character') {
+        return chapterDefaults.pov_character || '';
+      }
+      if (field.key === 'conflict') {
+        return chapterDefaults.conflict || '';
+      }
+      if (field.key === 'hook') {
+        return chapterDefaults.hook || '';
+      }
+      if (field.key === 'scene_summaries') {
+        return chapterDefaults.scene_summaries || [];
       }
     }
   }
@@ -557,8 +814,8 @@ export function serializeStepPayload(form, step) {
   return payload;
 }
 
-export function getFieldDisplayValue(field, project, snapshot) {
+export function getFieldDisplayValue(field, project, snapshot, selection = {}) {
   const enhancedField = { ...field, stepKey: field.stepKey || '' };
-  const value = renderInputValue(enhancedField, project, snapshot);
+  const value = renderInputValue(enhancedField, project, snapshot, selection);
   return field.list ? textFromList(value) : value;
 }

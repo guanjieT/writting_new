@@ -11,10 +11,87 @@ from .workflow_spec import WORKFLOW_STEPS, workflow_dependency_map
 
 WORKFLOW_ORDER = [step.key for step in WORKFLOW_STEPS]
 WORKFLOW_CHILDREN: dict[str, set[str]] = {}
+WORKFLOW_DESCENDANTS: dict[str, list[str]] = {}
+WORKFLOW_SCOPE_KIND = {step.key: step.scope for step in WORKFLOW_STEPS}
 
 for step_key, dependencies in workflow_dependency_map().items():
     for dependency in dependencies:
         WORKFLOW_CHILDREN.setdefault(dependency, set()).add(step_key)
+
+
+def _build_descendants_map() -> dict[str, list[str]]:
+    descendants: dict[str, list[str]] = {}
+    for step_key in WORKFLOW_ORDER:
+        seen: set[str] = set()
+        stack = list(WORKFLOW_CHILDREN.get(step_key, set()))
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(WORKFLOW_CHILDREN.get(current, set()))
+        descendants[step_key] = sorted(seen, key=lambda key: WORKFLOW_ORDER.index(key) if key in WORKFLOW_ORDER else len(WORKFLOW_ORDER))
+    return descendants
+
+
+WORKFLOW_DESCENDANTS = _build_descendants_map()
+
+
+def _artifact_scope_kind(step_key: str) -> str:
+    return WORKFLOW_SCOPE_KIND.get(step_key, "project")
+
+
+def _artifact_scope_payload(step_key: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    scope_kind = _artifact_scope_kind(step_key)
+    if scope_kind == "volume":
+        return {"scope_kind": scope_kind, "volume_index": max(int(payload.get("volume_index") or 1), 1)}
+    if scope_kind == "chapter":
+        return {
+            "scope_kind": scope_kind,
+            "volume_index": max(int(payload.get("volume_index") or 1), 1),
+            "chapter_index": max(int(payload.get("chapter_index") or 1), 1),
+        }
+    return {"scope_kind": "project"}
+
+
+def _artifact_key(step_key: str, scope_payload: Mapping[str, Any]) -> str:
+    scope_kind = scope_payload.get("scope_kind", "project")
+    if scope_kind == "volume":
+        return f"{step_key}:{scope_payload['volume_index']}"
+    if scope_kind == "chapter":
+        return f"{step_key}:{scope_payload['volume_index']}:{scope_payload['chapter_index']}"
+    return step_key
+
+
+def _scope_matches(artifact: Artifact, step_key: str, scope_payload: Mapping[str, Any]) -> bool:
+    metadata = artifact.metadata or {}
+    if metadata.get("step") != step_key:
+        return False
+    scope_kind = scope_payload.get("scope_kind", "project")
+    if scope_kind != metadata.get("scope_kind", "project"):
+        return False
+    if scope_kind == "volume":
+        return int(metadata.get("volume_index") or 0) == int(scope_payload.get("volume_index") or 0)
+    if scope_kind == "chapter":
+        return int(metadata.get("volume_index") or 0) == int(scope_payload.get("volume_index") or 0) and int(metadata.get("chapter_index") or 0) == int(scope_payload.get("chapter_index") or 0)
+    return True
+
+
+def _artifact_matches_descendant_scope(artifact: Artifact, step_key: str, scope_payload: Mapping[str, Any]) -> bool:
+    if artifact.metadata.get("step") not in WORKFLOW_DESCENDANTS.get(step_key, []):
+        return False
+    scope_kind = scope_payload.get("scope_kind", "project")
+    if scope_kind == "project":
+        return True
+    if scope_kind == "volume":
+        return int(artifact.metadata.get("volume_index") or 0) == int(scope_payload.get("volume_index") or 0)
+    if scope_kind == "chapter":
+        return int(artifact.metadata.get("volume_index") or 0) == int(scope_payload.get("volume_index") or 0) and int(artifact.metadata.get("chapter_index") or 0) == int(scope_payload.get("chapter_index") or 0)
+    return False
+
+
+def _artifact_step_key(artifact: Artifact) -> str:
+    return str(artifact.metadata.get("step") or artifact.key)
 
 
 def _project_step_from_artifacts(artifacts: dict[str, Artifact]) -> WorkflowStep:
@@ -96,30 +173,61 @@ class ProjectService:
         project.touch()
         return self.repository.save(project)
 
+    def _mark_descendants_stale(self, project: NovelProject, artifact: Artifact) -> list[str]:
+        step_key = _artifact_step_key(artifact)
+        scope_payload = {
+            "scope_kind": artifact.metadata.get("scope_kind", "project"),
+            "volume_index": artifact.metadata.get("volume_index"),
+            "chapter_index": artifact.metadata.get("chapter_index"),
+        }
+        affected: list[str] = []
+        for artifact_key, candidate in project.artifacts.items():
+            if candidate.key == artifact.key:
+                continue
+            if not _artifact_matches_descendant_scope(candidate, step_key, scope_payload):
+                continue
+            if candidate.metadata.get("stale"):
+                continue
+            candidate.metadata = {**candidate.metadata, "stale": True, "state": "stale"}
+            affected.append(artifact_key)
+        return affected
+
+    def register_generated_artifact(self, project_id: str, artifact: Artifact) -> tuple[NovelProject, list[str]]:
+        project = self.get(project_id)
+        project.artifacts[artifact.key] = artifact
+        step_value = str(artifact.metadata.get("step") or project.current_step.value)
+        try:
+            project.touch(WorkflowStep(step_value))
+        except ValueError:
+            project.touch()
+        affected = self._mark_descendants_stale(project, artifact)
+        return self.save(project), affected
+
     def delete(self, project_id: str) -> NovelProject:
         project = self.repository.delete(project_id)
         if project is None:
             raise ProjectNotFoundError(project_id)
         return project
 
-    def add_artifact(self, project_id: str, artifact: Artifact, step: Any | None = None) -> NovelProject:
-        project = self.get(project_id)
-        project.add_artifact(artifact)
-        if step is not None:
-            project.current_step = step
-            project.status = step
-        return self.save(project)
-
     def remove_artifact(self, project_id: str, artifact_key: str) -> tuple[NovelProject, list[str]]:
         project = self.get(project_id)
         removed: list[str] = []
 
-        if project.remove_artifact(artifact_key) is not None:
-            removed.append(artifact_key)
+        target = project.artifacts.get(artifact_key)
+        if target is None:
+            raise LookupError(f"artifact not found: {project_id}/{artifact_key}")
 
-        for dependent_key in _dependent_step_keys(artifact_key):
-            if project.remove_artifact(dependent_key) is not None:
-                removed.append(dependent_key)
+        step_key = _artifact_step_key(target)
+        scope_payload = {
+            "scope_kind": target.metadata.get("scope_kind", "project"),
+            "volume_index": target.metadata.get("volume_index"),
+            "chapter_index": target.metadata.get("chapter_index"),
+        }
+
+        for candidate_key, candidate in list(project.artifacts.items()):
+            if candidate.key == target.key or _artifact_matches_descendant_scope(candidate, step_key, scope_payload):
+                if project.remove_artifact(candidate_key) is not None:
+                    removed.append(candidate_key)
 
         if not removed:
             raise LookupError(f"artifact not found: {project_id}/{artifact_key}")

@@ -29,6 +29,16 @@ def outline_page() -> FileResponse:
     return _page("outline.html")
 
 
+@router.get("/volume-outline", include_in_schema=False)
+def volume_outline_page() -> FileResponse:
+    return _page("volume-outline.html")
+
+
+@router.get("/chapter-plan", include_in_schema=False)
+def chapter_plan_page() -> FileResponse:
+    return _page("chapter-plan.html")
+
+
 @router.get("/review", include_in_schema=False)
 def review_page() -> FileResponse:
     return _page("review.html")

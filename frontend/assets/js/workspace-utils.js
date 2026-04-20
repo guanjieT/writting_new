@@ -1,7 +1,7 @@
 import { api } from './api-client.js';
 import { waitForTask } from './api-client.js';
 import { badge, escapeHtml, formatDate, renderJsonPreview, truncate } from './dom.js';
-import { extractVolumeOutlineDefaults, getArtifact, getStepDependencies, getStepMeta, getStepLabel, getStepStatus, serializeStepPayload } from './app-config.js';
+import { extractChapterPlanDefaults, extractVolumeOutlineDefaults, getArtifact, getScopedArtifact, getStepDependencies, getStepMeta, getStepLabel, getStepScopeKind, getStepStatus, serializeStepPayload } from './app-config.js';
 
 export function renderField(field, value) {
   const safeValue = value ?? '';
@@ -106,6 +106,98 @@ export function hydrateVolumeOutlineDefaults(form, snapshot) {
   }
 }
 
+export function hydrateChapterPlanDefaults(form, snapshot) {
+  if (!form) {
+    return;
+  }
+
+  const volumeIndexField = form.elements.namedItem('volume_index');
+  const chapterIndexField = form.elements.namedItem('chapter_index');
+  const selectedVolumeIndex = Number(volumeIndexField?.value || 1) || 1;
+  const selectedChapterIndex = Number(chapterIndexField?.value || 1) || 1;
+  const defaults = extractChapterPlanDefaults(snapshot, selectedVolumeIndex, selectedChapterIndex);
+  if (!defaults) {
+    return;
+  }
+
+  const assignValue = (fieldName, nextValue) => {
+    const control = form.elements.namedItem(fieldName);
+    if (!control) {
+      return;
+    }
+    const sourceKey = `${selectedVolumeIndex}:${selectedChapterIndex}`;
+    const shouldOverwrite = !String(control.value || '').trim() || control.dataset.chapterPlanSourceKey !== sourceKey;
+    if (control.type === 'checkbox') {
+      if (shouldOverwrite) {
+        control.checked = Boolean(nextValue);
+        control.dataset.chapterPlanSourceKey = sourceKey;
+      }
+      return;
+    }
+    if (control.tagName === 'TEXTAREA' && Array.isArray(nextValue)) {
+      if (shouldOverwrite) {
+        control.value = nextValue.join('\n');
+        control.dataset.chapterPlanSourceKey = sourceKey;
+      }
+      return;
+    }
+    if (!shouldOverwrite) {
+      return;
+    }
+    control.value = Array.isArray(nextValue) ? nextValue.join('\n') : String(nextValue ?? '');
+    control.dataset.chapterPlanSourceKey = sourceKey;
+  };
+
+  assignValue('chapter_title', defaults.chapter_title);
+  assignValue('chapter_summary', defaults.chapter_summary);
+  assignValue('chapter_type', defaults.chapter_type);
+  assignValue('pov_character', defaults.pov_character);
+  assignValue('conflict', defaults.conflict);
+  assignValue('hook', defaults.hook);
+  assignValue('scene_summaries', defaults.scene_summaries);
+
+  if (volumeIndexField && !volumeIndexField.dataset.chapterPlanHydrateBound) {
+    volumeIndexField.addEventListener('input', () => hydrateChapterPlanDefaults(form, snapshot));
+    volumeIndexField.addEventListener('change', () => hydrateChapterPlanDefaults(form, snapshot));
+    volumeIndexField.dataset.chapterPlanHydrateBound = 'true';
+  }
+
+  if (chapterIndexField && !chapterIndexField.dataset.chapterPlanHydrateBound) {
+    chapterIndexField.addEventListener('input', () => hydrateChapterPlanDefaults(form, snapshot));
+    chapterIndexField.addEventListener('change', () => hydrateChapterPlanDefaults(form, snapshot));
+    chapterIndexField.dataset.chapterPlanHydrateBound = 'true';
+  }
+}
+
+export function hydrateRoughChapterPlanDefaults(form, snapshot) {
+  if (!form) {
+    return;
+  }
+
+  const volumeIndexField = form.elements.namedItem('volume_index');
+  const selectedVolumeIndex = Number(volumeIndexField?.value || 1) || 1;
+  const defaults = extractVolumeOutlineDefaults(snapshot, selectedVolumeIndex);
+  if (!defaults) {
+    return;
+  }
+
+  const targetChapterCountField = form.elements.namedItem('target_chapter_count');
+  if (targetChapterCountField) {
+    const sourceIndex = String(selectedVolumeIndex);
+    const shouldOverwrite = !String(targetChapterCountField.value || '').trim() || targetChapterCountField.dataset.roughChapterPlanSourceIndex !== sourceIndex;
+    if (shouldOverwrite && defaults.target_chapter_count) {
+      targetChapterCountField.value = String(defaults.target_chapter_count);
+      targetChapterCountField.dataset.roughChapterPlanSourceIndex = sourceIndex;
+    }
+  }
+
+  if (volumeIndexField && !volumeIndexField.dataset.roughChapterPlanHydrateBound) {
+    volumeIndexField.addEventListener('input', () => hydrateRoughChapterPlanDefaults(form, snapshot));
+    volumeIndexField.addEventListener('change', () => hydrateRoughChapterPlanDefaults(form, snapshot));
+    volumeIndexField.dataset.roughChapterPlanHydrateBound = 'true';
+  }
+}
+
 export async function runFieldCompletion({ projectId, step, form, button, onProgress }) {
   const fieldKey = button.getAttribute('data-field-key');
   const fieldLabel = button.getAttribute('data-field-label') || fieldKey || '';
@@ -149,8 +241,8 @@ export async function runFieldCompletion({ projectId, step, form, button, onProg
   onProgress?.('AI 补全已回填。');
 }
 
-export function renderArtifactBlock(snapshot, step) {
-  const artifact = getArtifact(snapshot, step);
+export function renderArtifactBlock(snapshot, step, selection = {}) {
+  const artifact = getScopedArtifact(snapshot, step, selection) || (getStepScopeKind(step) === 'project' ? getArtifact(snapshot, step) : null);
   const meta = getStepMeta(step);
   if (!artifact) {
     return `
@@ -237,7 +329,7 @@ export function renderChecklist(step) {
   `;
 }
 
-export function renderDependencyList(step, dependencyMap, snapshot) {
+export function renderDependencyList(step, dependencyMap, snapshot, selection = {}) {
   const dependencies = getStepDependencies(step, dependencyMap);
   if (!dependencies.length) {
     return '<div class="empty-state compact">这个对象没有前置依赖。</div>';
@@ -246,7 +338,7 @@ export function renderDependencyList(step, dependencyMap, snapshot) {
   return `
     <div class="stack-list">
       ${dependencies.map((dependency) => {
-        const ready = Boolean(getArtifact(snapshot, dependency));
+        const ready = Boolean(getScopedArtifact(snapshot, dependency, selection) || (getStepScopeKind(dependency) === 'project' ? getArtifact(snapshot, dependency) : null));
         return `
           <div class="dependency-row">
             <span>${escapeHtml(getStepLabel(dependency))}</span>
@@ -282,10 +374,10 @@ export async function deleteStepArtifact({ projectId, step, label }) {
   return api.deleteProjectArtifact(projectId, step);
 }
 
-export function renderStageOverview(steps, snapshot, dependencyMap, tasks = []) {
+export function renderStageOverview(steps, snapshot, dependencyMap, tasks = [], selection = {}) {
   return steps.map((step) => {
-    const status = getStepStatus(step, snapshot, dependencyMap, tasks);
-    const artifact = getArtifact(snapshot, step);
+    const status = getStepStatus(step, snapshot, dependencyMap, tasks, selection);
+    const artifact = getScopedArtifact(snapshot, step, selection) || getArtifact(snapshot, step);
     return `
       <article class="stat-card">
         <div class="stat-card-head">

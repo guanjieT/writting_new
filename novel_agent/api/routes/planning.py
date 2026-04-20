@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 
 from ...domain import TaskRecord
 from ..deps import get_container
-from ..schemas import ChapterPlanRequest, TaskResponse, VolumeOutlineRequest
+from ..schemas import ChapterPlanRequest, RoughChapterPlanRequest, RoughVolumeOutlineRequest, TaskResponse, VolumeOutlineRequest
 
 router = APIRouter(prefix="/projects", tags=["planning"])
 
@@ -20,6 +20,16 @@ def _submit_step(container, project_id: str, step: str, payload: dict) -> TaskRe
 @router.post("/{project_id}/volume-outline", response_model=TaskResponse)
 def generate_volume_outline(project_id: str, payload: VolumeOutlineRequest, container=Depends(get_container)) -> TaskRecord:
     return _submit_step(container, project_id, "volume_outline", payload.model_dump())
+
+
+@router.post("/{project_id}/rough-volume-outline", response_model=TaskResponse)
+def generate_rough_volume_outline(project_id: str, payload: RoughVolumeOutlineRequest, container=Depends(get_container)) -> TaskRecord:
+    return _submit_step(container, project_id, "rough_volume_outline", payload.model_dump())
+
+
+@router.post("/{project_id}/rough-chapter-plan", response_model=TaskResponse)
+def generate_rough_chapter_plan(project_id: str, payload: RoughChapterPlanRequest, container=Depends(get_container)) -> TaskRecord:
+    return _submit_step(container, project_id, "rough_chapter_plan", payload.model_dump())
 
 
 @router.post("/{project_id}/chapter-plan", response_model=TaskResponse)

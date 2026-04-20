@@ -123,7 +123,7 @@ function renderQueueItems(items, projectId) {
       </div>
       <p>${escapeHtml(item.detail)}</p>
       <div class="actions-row wrap">
-        <a class="secondary-link" href="${withProjectQuery(item.page === 'outline' ? '/outline' : '/workflow', projectId)}">去处理</a>
+        <a class="secondary-link" href="${withProjectQuery(item.page === 'outline' ? '/outline' : item.page === 'volume-outline' ? '/volume-outline' : item.page === 'chapter-plan' ? '/chapter-plan' : '/workflow', projectId)}">去处理</a>
       </div>
     </article>
   `).join('');
@@ -138,7 +138,7 @@ function renderActionsPanel(items, projectId) {
         <h3>${escapeHtml(recommended ? recommended.title : '继续推进项目')}</h3>
         <p class="muted">${escapeHtml(recommended ? recommended.detail : '没有明显阻塞项，可以继续往下生成或进行人工审读。')}</p>
         <div class="actions-row wrap">
-          <a class="primary-link" href="${withProjectQuery(recommended?.page === 'outline' ? '/outline' : '/workflow', projectId)}">打开主处理页面</a>
+          <a class="primary-link" href="${withProjectQuery(recommended?.page === 'outline' ? '/outline' : recommended?.page === 'volume-outline' ? '/volume-outline' : recommended?.page === 'chapter-plan' ? '/chapter-plan' : '/workflow', projectId)}">打开主处理页面</a>
           <a class="secondary-link" href="${withProjectQuery('/workflow', projectId)}">设定与写作</a>
           <a class="secondary-link" href="${withProjectQuery('/outline', projectId)}">结构台</a>
         </div>
@@ -166,7 +166,7 @@ function renderMatrix(snapshot, projectId) {
           const status = getStepStatus(step, snapshot, dependencyMap, currentTasks);
           const artifact = getArtifact(snapshot, step);
           const deps = getStepDependencies(step, dependencyMap);
-          const link = getStepMeta(step).page === 'outline' ? '/outline' : '/workflow';
+          const link = getStepMeta(step).page === 'outline' ? '/outline' : getStepMeta(step).page === 'volume-outline' ? '/volume-outline' : getStepMeta(step).page === 'chapter-plan' ? '/chapter-plan' : '/workflow';
           return `
             <article class="review-card">
               <div class="review-card-head">

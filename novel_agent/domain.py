@@ -22,7 +22,9 @@ class WorkflowStep(str, Enum):
     STORY_BIBLE = "story_bible"
     CHARACTERS = "characters"
     OUTLINE = "outline"
+    ROUGH_VOLUME_OUTLINE = "rough_volume_outline"
     VOLUME_OUTLINE = "volume_outline"
+    ROUGH_CHAPTER_PLAN = "rough_chapter_plan"
     CHAPTER_PLAN = "chapter_plan"
     CHAPTER = "chapter"
     REVISION = "revision"
@@ -113,10 +115,6 @@ class NovelProject(BaseModel):
             self.current_step = step
             self.status = step
         self.updated_at = utc_now()
-
-    def add_artifact(self, artifact: Artifact, step: WorkflowStep | None = None) -> None:
-        self.artifacts[artifact.key] = artifact
-        self.touch(step or self.current_step)
 
     def remove_artifact(self, key: str) -> Artifact | None:
         return self.artifacts.pop(key, None)
