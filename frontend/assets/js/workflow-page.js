@@ -206,6 +206,7 @@ function renderWorkspace() {
         projectId: currentSnapshot.project.project_id,
         step,
         form,
+        snapshot: currentSnapshot,
         onProgress(message) {
           messageBox.hidden = false;
           messageBox.className = 'notice info';

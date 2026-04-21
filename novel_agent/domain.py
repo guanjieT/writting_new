@@ -65,6 +65,7 @@ class ArtifactSummary(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
     best_for_steps: list[str] = Field(default_factory=list)
     best_for_reason: str = ""
+    structured: dict[str, Any] = Field(default_factory=dict)
 
 
 class GeneratedArtifactPayload(BaseModel):
@@ -74,16 +75,36 @@ class GeneratedArtifactPayload(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
     best_for_reason: str = ""
+    structured: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
     def _coerce_content_payload(cls, value: Any) -> Any:
         if not isinstance(value, dict):
             return value
+        value = dict(value)
         content = value.get("content")
         if isinstance(content, (dict, list)):
-            value = dict(value)
             value["content"] = json_dumps(content)
+        structured: dict[str, Any] = {}
+        raw_structured = value.get("structured")
+        if isinstance(raw_structured, dict):
+            structured.update(raw_structured)
+        elif isinstance(raw_structured, list):
+            structured["items"] = raw_structured
+        elif raw_structured not in (None, ""):
+            structured["value"] = raw_structured
+
+        fixed_keys = {"content", "overview", "key_facts", "constraints", "open_questions", "best_for_reason", "structured"}
+        for key in list(value.keys()):
+            if key in fixed_keys:
+                continue
+            structured[key] = value.pop(key)
+
+        if structured:
+            value["structured"] = structured
+        elif "structured" in value and value["structured"] in (None, "", {}, []):
+            value.pop("structured", None)
         return value
 
 

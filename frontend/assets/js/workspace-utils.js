@@ -350,8 +350,49 @@ export function renderDependencyList(step, dependencyMap, snapshot, selection = 
   `;
 }
 
-export async function runStepFromForm({ projectId, step, form, onProgress }) {
+function normalizeSubmittedSelection(selection = {}, payload = {}) {
+  return {
+    volumeIndex: Math.max(Number(payload.volume_index || payload.volumeIndex || selection.volumeIndex || selection.volume_index || 1) || 1, 1),
+    chapterIndex: Math.max(Number(payload.chapter_index || payload.chapterIndex || selection.chapterIndex || selection.chapter_index || 1) || 1, 1),
+  };
+}
+
+function buildBaseArtifactPayload(step, snapshot, selection = {}, payload = {}) {
+  if (!snapshot) {
+    return null;
+  }
+
+  const submittedSelection = normalizeSubmittedSelection(selection, payload);
+
+  const attachArtifact = (artifact, sourceStep) => {
+    if (!artifact) {
+      return null;
+    }
+    return {
+      source_step: sourceStep,
+      artifact_key: artifact.key,
+      artifact_title: artifact.title,
+      artifact_content: artifact.content,
+      artifact_summary: artifact.summary,
+      artifact_metadata: artifact.metadata,
+    };
+  };
+
+  if (step === 'volume_outline') {
+    return attachArtifact(getArtifact(snapshot, 'rough_volume_outline'), 'rough_volume_outline');
+  }
+  if (step === 'chapter_plan') {
+    return attachArtifact(getScopedArtifact(snapshot, 'rough_chapter_plan', submittedSelection), 'rough_chapter_plan');
+  }
+  return null;
+}
+
+export async function runStepFromForm({ projectId, step, form, snapshot = null, selection = {}, onProgress }) {
   const payload = serializeStepPayload(form, step);
+  const baseArtifact = buildBaseArtifactPayload(step, snapshot, selection, payload);
+  if (baseArtifact) {
+    payload.base_artifact = baseArtifact;
+  }
   const endpoint = getStepMeta(step).endpoint;
   if (!endpoint) {
     throw new Error(`步骤 ${step} 没有可用的接口。`);

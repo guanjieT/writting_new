@@ -448,8 +448,35 @@ function cleanOutlineLine(value) {
     .trim();
 }
 
+function getGeneratedStructuredPayload(artifact) {
+  const generatedPayload = artifact?.metadata?.generated_payload;
+  if (generatedPayload && typeof generatedPayload.structured === 'object' && generatedPayload.structured !== null) {
+    return generatedPayload.structured;
+  }
+  const summaryStructured = artifact?.summary?.structured;
+  if (summaryStructured && typeof summaryStructured === 'object') {
+    return summaryStructured;
+  }
+  return null;
+}
+
 function parseOutlineVolumeSections(snapshot) {
   const outlineArtifact = getArtifact(snapshot, 'rough_volume_outline') || getArtifact(snapshot, 'outline');
+  const structured = getGeneratedStructuredPayload(outlineArtifact);
+  if (structured && Array.isArray(structured.volumes) && structured.volumes.length) {
+    return structured.volumes
+      .map((item, index) => ({
+        index: Number(item?.volume_index || index + 1) || index + 1,
+        title: String(item?.title || '').trim(),
+        goal: String(item?.goal || '').trim(),
+        conflict: String(item?.main_conflict || '').trim(),
+        hook: String(item?.ending_hook || '').trim(),
+        chapter_briefs: Array.isArray(item?.chapter_briefs) ? item.chapter_briefs.map((brief) => cleanOutlineLine(brief)).filter(Boolean) : [],
+        target_chapter_count: Number(item?.target_chapter_count || 0) || 0,
+        target_words: Number(item?.target_words || 0) || 0,
+      }))
+      .filter((item) => item.index > 0);
+  }
   const generatedContent = outlineArtifact?.metadata?.generated_payload?.content || outlineArtifact?.content || '';
   const text = String(generatedContent || '').trim();
   if (!text) {
@@ -536,6 +563,23 @@ function parseOutlineVolumeSections(snapshot) {
 
 function parseRoughChapterPlanSections(snapshot) {
   const roughArtifact = getArtifact(snapshot, 'rough_chapter_plan');
+  const structured = getGeneratedStructuredPayload(roughArtifact);
+  if (structured && Array.isArray(structured.chapters) && structured.chapters.length) {
+    return structured.chapters
+      .map((item, index) => ({
+        index: Number(item?.chapter_index || index + 1) || index + 1,
+        title: String(item?.title || '').trim(),
+        summary: String(item?.summary || '').trim(),
+        chapter_type: String(item?.chapter_type || '').trim(),
+        pov_character: String(item?.pov_character || '').trim(),
+        conflict: String(item?.conflict || '').trim(),
+        hook: String(item?.hook || '').trim(),
+        scene_summaries: Array.isArray(item?.scene_summaries) ? item.scene_summaries.map((scene) => cleanOutlineLine(scene)).filter(Boolean) : [],
+        main_event: String(item?.main_event || '').trim(),
+        target_words: Number(item?.target_words || 0) || 0,
+      }))
+      .filter((item) => item.index > 0);
+  }
   const generatedContent = roughArtifact?.metadata?.generated_payload?.content || roughArtifact?.content || '';
   const text = String(generatedContent || '').trim();
   if (!text) {
@@ -663,7 +707,7 @@ export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
     volume_conflict: selected.conflict || '',
     volume_hook: selected.hook || '',
     chapter_briefs: selected.chapter_briefs,
-    target_chapter_count: chapterCountFromBriefs || selected.chapter_briefs.length || 0,
+    target_chapter_count: selected.target_chapter_count || chapterCountFromBriefs || selected.chapter_briefs.length || 0,
   };
 }
 
@@ -689,11 +733,19 @@ export function extractChapterPlanDefaults(snapshot, volumeIndex = 1, chapterInd
     conflict: selected.conflict || '',
     hook: selected.hook || '',
     scene_summaries: selected.scene_summaries,
+    main_event: selected.main_event || '',
+    target_words: selected.target_words || 0,
   };
 }
 
 export function renderInputValue(field, project, snapshot, selection = {}) {
   const projectInput = project?.input || {};
+  if (field.key === 'volume_index') {
+    return Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1);
+  }
+  if (field.key === 'chapter_index') {
+    return Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1);
+  }
   if (field.key === 'requirements_text') {
     return projectInput.premise || '';
   }

@@ -78,11 +78,13 @@ class VolumeOutlineRequest(GenerationBaseRequest):
     volume_hook: str = ""
     target_words: int = 0
     target_chapter_count: int = 0
+    base_artifact: dict[str, Any] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
 
 
 class RoughChapterPlanRequest(GenerationBaseRequest):
     volume_index: int = 1
+    total_target_chapters: int = 0
     target_chapter_count: int = 0
     notes: list[str] = Field(default_factory=list)
 
@@ -103,6 +105,7 @@ class ChapterPlanRequest(GenerationBaseRequest):
     introduced_characters: list[str] = Field(default_factory=list)
     scene_summaries: list[str] = Field(default_factory=list)
     plan_notes: str = ""
+    base_artifact: dict[str, Any] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
 
 

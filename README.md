@@ -9,7 +9,7 @@
 
 代码语法最低需要 Python 3.10；当前机器如果没有 3.10+，可以先创建虚拟环境，但正式运行仍建议切到 3.10 或更高版本。
 
-前端已经按多页面方式拆分完成，浏览器入口分别是 `/`、`/workflow`、`/outline`、`/volume-outline`、`/chapter-plan` 和 `/review`。项目中心负责创建、选择和编辑项目基础设定，编辑后会清空依赖产物并回到起点；工作流页负责按模块执行生成步骤，总纲页只管总纲和全书粗卷纲，卷纲页只管当前卷的完整卷纲和粗章纲，章节计划页只管当前章的完整章节计划，审查页负责查看产物与任务状态。页面之间会通过 `project_id` 和本地存储保持当前项目，不会在切页时丢失选择。工作流页与结构页里的参数字段都提供了字段级 `AI 补全` 按钮，可以在不重跑整步的前提下先补齐局部输入；补全请求会同时带上当前字段、同阶段表单约束和直接上游产物，例如角色框架里的 `role_capacity` 会进入 `core_roles` 和 `role_slots` 的补全上下文。现在每个 artifact 都会同时保存完整正文和结构化摘要，生成阶段要求模型一次性返回 `content`、`overview`、`key_facts`、`constraints`、`open_questions` 和 `best_for_reason`，后端会把 `content` 作为正文写入，把其余字段落到摘要里。总纲拆成了 `总纲 -> 粗卷纲 -> 完整卷纲 -> 粗章纲 -> 完整章节计划` 的五段式锁式流水线，不再使用 `confirmed` 作为粗细切换开关。总纲、卷纲、章节计划和章节正文现在分别使用不同的上下文档位：总纲只读项目简报和上游核心摘要，卷纲读总纲摘要和当前卷约束，章节计划读卷纲摘要与相关设定摘要，章节正文读章节计划摘要和写作约束，避免把整份项目数据重复灌进 prompt。总纲页的 `chapters_per_volume` 现在会作为硬性目标传入生成流程，生成的每卷章节数不应再回落到默认 12。需求分析页会自动回填项目中心的 `premise -> requirements_text`、`target_audience -> audience`，并把项目约束合并到补充说明中；总纲页会自动回填 `outline_focus -> focus_points`，一致性页会把项目规则合并到 `known_rules`，让项目中心输入能更直接地进入步骤表单。
+前端已经按多页面方式拆分完成，浏览器入口分别是 `/`、`/workflow`、`/outline`、`/volume-outline`、`/chapter-plan` 和 `/review`。项目中心负责创建、选择和编辑项目基础设定，编辑后会清空依赖产物并回到起点；工作流页负责按模块执行生成步骤，总纲页只管总纲和全书粗卷纲，卷纲页只管当前卷的完整卷纲和粗章纲，章节计划页只管当前章的完整章节计划，审查页负责查看产物与任务状态。页面之间会通过 `project_id` 和本地存储保持当前项目，不会在切页时丢失选择。工作流页与结构页里的参数字段都提供了字段级 `AI 补全` 按钮，可以在不重跑整步的前提下先补齐局部输入；补全请求会同时带上当前字段、同阶段表单约束和直接上游产物，例如角色框架里的 `role_capacity` 会进入 `core_roles` 和 `role_slots` 的补全上下文。现在每个 artifact 都会同时保存完整正文和结构化摘要，规划类产物已经改成固定结构输出，`content` 只保留摘要，结构化字段才是主体数据。总纲输出 `story_arcs`、`global_goals`、`main_conflicts`、`ending_direction`、`volume_plan_hints`；粗卷纲输出 `volumes`；卷纲输出 `volume_index`、`title`、`summary`、`goal`、`main_conflict`、`ending_hook`、`target_chapter_count`、`target_words`、`arc_segments`；粗章纲默认一次性生成整卷全部章节的 `chapters`，并用 `total_target_chapters` 做全卷校验；章节计划输出 `title`、`summary`、`chapter_type`、`pov_character`、`main_event`、`conflict`、`hook`、`target_words`、`min_words`、`characters`、`introduced_characters`、`scene_summaries`、`continuity_notes`、`writing_notes`。总纲拆成了 `总纲 -> 粗卷纲 -> 完整卷纲 -> 粗章纲 -> 完整章节计划` 的五段式锁式流水线，不再使用 `confirmed` 作为粗细切换开关。总纲、卷纲、章节计划和章节正文现在分别使用不同的上下文档位：总纲只读项目简报和上游核心摘要，卷纲读总纲摘要和当前卷约束，章节计划读卷纲摘要与相关设定摘要，章节正文读章节计划摘要和写作约束，避免把整份项目数据重复灌进 prompt。总纲页的 `chapters_per_volume` 现在会作为硬性目标传入生成流程，生成的每卷章节数不应再回落到默认 12。需求分析页会自动回填项目中心的 `premise -> requirements_text`、`target_audience -> audience`，并把项目约束合并到补充说明中；总纲页会自动回填 `outline_focus -> focus_points`，一致性页会把项目规则合并到 `known_rules`，让项目中心输入能更直接地进入步骤表单。
 
 参数映射与传递审计文档见 [docs/parameter-flow-audit.md](docs/parameter-flow-audit.md)。
 
@@ -316,6 +316,7 @@ novel_agent_clean/
 - `chapters_per_volume: number`
 - `notes: string[]`
 - `temperature: number`
+- 结果必须按卷分段输出，`content` 只保留摘要，`structured.volumes` 才是主体数据。
 - `max_tokens: number`
 
 ### 章节计划
@@ -346,9 +347,11 @@ novel_agent_clean/
 `POST /projects/{project_id}/rough-chapter-plan`
 
 - `volume_index: number`
+- `total_target_chapters: number`
 - `target_chapter_count: number`
 - `notes: string[]`
 - `temperature: number`
+- 结果默认一次性生成整卷全部章节，`structured.chapters` 必须连续覆盖整卷。
 - `max_tokens: number`
 
 ### 章节生成

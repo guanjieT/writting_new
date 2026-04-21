@@ -56,6 +56,11 @@ function setQuerySelection(selection) {
   window.history.replaceState({}, '', url);
 }
 
+function reloadWithSelection(nextSelection) {
+  setQuerySelection(nextSelection);
+  return loadPage();
+}
+
 function buildSelectionUrl(path, projectId, selection) {
   const url = new URL(path, window.location.origin);
   if (projectId) {
@@ -190,8 +195,7 @@ function renderSelection(snapshot, selection) {
       const nextSelection = { ...selection };
       nextSelection.volumeIndex = Number(selectionPanel.querySelector('[name="volume_index"]')?.value || selection.volumeIndex || 1);
       nextSelection.chapterIndex = Number(selectionPanel.querySelector('[name="chapter_index"]')?.value || selection.chapterIndex || 1);
-      setQuerySelection(nextSelection);
-      loadPage().catch((error) => renderNotice(workspace, error.message, 'error'));
+      reloadWithSelection(nextSelection).catch((error) => renderNotice(workspace, error.message, 'error'));
     });
   });
 }
@@ -280,6 +284,17 @@ function renderWorkspace(selection) {
       hydrateChapterPlanDefaults(form, currentSnapshot);
     }
 
+    form.querySelectorAll('[name="volume_index"], [name="chapter_index"]').forEach((control) => {
+      control.addEventListener('change', () => {
+        const nextSelection = { ...selection };
+        const formVolumeIndex = Number(form.elements.namedItem('volume_index')?.value || selection.volumeIndex || 1) || 1;
+        const formChapterIndex = Number(form.elements.namedItem('chapter_index')?.value || selection.chapterIndex || 1) || 1;
+        nextSelection.volumeIndex = formVolumeIndex;
+        nextSelection.chapterIndex = formChapterIndex;
+        reloadWithSelection(nextSelection).catch((error) => renderNotice(workspace, error.message, 'error'));
+      });
+    });
+
     form.addEventListener('click', async (event) => {
       const button = event.target.closest('[data-ai-complete]');
       if (!button || !form.contains(button)) {
@@ -315,6 +330,8 @@ function renderWorkspace(selection) {
           projectId: currentSnapshot.project.project_id,
           step,
           form,
+          snapshot: currentSnapshot,
+          selection: stepSelection,
           onProgress(message) {
             messageBox.hidden = false;
             messageBox.className = 'notice info';

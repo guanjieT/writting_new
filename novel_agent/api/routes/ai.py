@@ -42,6 +42,7 @@ def complete_field(project_id: str, payload: FieldCompletionRequest, container=D
             "field_placeholder": payload.field_placeholder or "",
             "current_value": payload.current_value or "",
             "field_context_json": json.dumps(completion_context["field"], ensure_ascii=False, indent=2),
+            "reference_fields_json": json.dumps(completion_context["reference_fields"], ensure_ascii=False, indent=2),
             "step_payload_json": json.dumps(completion_context["step_payload"], ensure_ascii=False, indent=2),
             "direct_dependency_steps_json": json.dumps(completion_context["direct_dependency_steps"], ensure_ascii=False, indent=2),
             "direct_dependency_artifacts_json": json.dumps(completion_context["direct_dependency_artifacts"], ensure_ascii=False, indent=2),

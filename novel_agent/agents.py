@@ -12,12 +12,149 @@ from .services import _artifact_key, _artifact_scope_payload, _scope_matches
 from .workflow_spec import workflow_dependent_map
 
 
+STRUCTURED_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
+    "outline": ("story_arcs", "global_goals", "main_conflicts", "ending_direction", "volume_plan_hints"),
+    "rough_volume_outline": ("volumes",),
+    "volume_outline": ("volume_index", "title", "summary", "goal", "main_conflict", "ending_hook", "target_chapter_count", "target_words", "arc_segments"),
+    "rough_chapter_plan": ("volume_index", "total_target_chapters", "chapters"),
+    "chapter_plan": (
+        "volume_index",
+        "chapter_index",
+        "title",
+        "summary",
+        "chapter_type",
+        "pov_character",
+        "main_event",
+        "conflict",
+        "hook",
+        "target_words",
+        "min_words",
+        "characters",
+        "introduced_characters",
+        "scene_summaries",
+        "continuity_notes",
+        "writing_notes",
+    ),
+}
+
+
 def _normalize_text_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
     if isinstance(value, str):
         return [line.strip() for line in value.splitlines() if line.strip()]
     return []
+
+
+def _build_outline_targets_json(project: NovelProject, context: AgentContext) -> str:
+    generation_context = build_generation_context(project, WorkflowStep.OUTLINE.value, context.payload)
+    project_input = generation_context["project_input"]
+    step_payload = generation_context["step_payload"]
+    target_volume_count = int(step_payload.get("volume_count") or project_input.get("target_volume_count") or 1)
+    target_chapters_per_volume = int(step_payload.get("chapters_per_volume") or project_input.get("target_chapters_per_volume") or 12)
+    return json.dumps(
+        {
+            "target_volume_count": target_volume_count,
+            "target_chapters_per_volume": target_chapters_per_volume,
+            "target_words": int(project_input.get("target_words") or 0),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _artifact_prompt_context(artifact: Any, *, excerpt_chars: int = 0) -> dict[str, Any]:
+    context = compact_artifact_context(artifact, excerpt_chars=excerpt_chars, include_excerpt=excerpt_chars > 0)
+    summary = context.get("summary")
+    if isinstance(summary, dict):
+        structured = summary.get("structured")
+        if isinstance(structured, dict):
+            context["structured"] = structured
+    return context
+
+
+def _require_keys(step: str, structured: dict[str, Any], keys: tuple[str, ...]) -> None:
+    missing = [key for key in keys if key not in structured]
+    if missing:
+        raise ValueError(f"{step} structured payload is missing required fields: {', '.join(missing)}")
+
+
+def _validate_chapter_sequence(step: str, structured: dict[str, Any]) -> None:
+    chapters = structured.get("chapters")
+    if not isinstance(chapters, list) or not chapters:
+        raise ValueError(f"{step} structured payload must include a non-empty chapters list")
+
+    total_target_chapters = structured.get("total_target_chapters")
+    try:
+        total_target_chapters_int = int(total_target_chapters)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{step} structured payload must include an integer total_target_chapters") from exc
+    if total_target_chapters_int <= 0:
+        raise ValueError(f"{step} structured payload must include a positive total_target_chapters")
+
+    if len(chapters) != total_target_chapters_int:
+        raise ValueError(f"{step} chapters count mismatch: expected {total_target_chapters_int}, got {len(chapters)}")
+
+    seen_indices: list[int] = []
+    for position, chapter in enumerate(chapters, start=1):
+        if not isinstance(chapter, dict):
+            raise ValueError(f"{step} chapters[{position - 1}] must be an object")
+        chapter_index = chapter.get("chapter_index")
+        if chapter_index is None:
+            raise ValueError(f"{step} chapter at position {position} is missing chapter_index")
+        try:
+            chapter_index_int = int(chapter_index)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{step} chapter_index must be an integer at position {position}") from exc
+        if chapter_index_int != position:
+            raise ValueError(f"{step} chapter_index must be consecutive from 1 to {total_target_chapters_int}; found {chapter_index_int} at position {position}")
+        seen_indices.append(chapter_index_int)
+
+    if len(seen_indices) != len(set(seen_indices)):
+        raise ValueError(f"{step} chapter_index values must be unique and consecutive from 1 to {total_target_chapters_int}")
+
+
+def _validate_structured_payload(step: str, payload: GeneratedArtifactPayload) -> None:
+    structured = payload.structured if isinstance(payload.structured, dict) else {}
+    required_keys = STRUCTURED_REQUIRED_KEYS.get(step, ())
+    if required_keys:
+        _require_keys(step, structured, required_keys)
+
+    if step == "rough_volume_outline":
+        volumes = structured.get("volumes")
+        if not isinstance(volumes, list) or not volumes:
+            raise ValueError("rough_volume_outline structured payload must include a non-empty volumes list")
+        seen_volume_indices: list[int] = []
+        for position, volume in enumerate(volumes, start=1):
+            if not isinstance(volume, dict):
+                raise ValueError(f"rough_volume_outline volumes[{position - 1}] must be an object")
+            volume_index = volume.get("volume_index")
+            if volume_index is None:
+                raise ValueError(f"rough_volume_outline volume at position {position} is missing volume_index")
+            try:
+                volume_index_int = int(volume_index)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"rough_volume_outline volume_index must be an integer at position {position}") from exc
+            if volume_index_int != position:
+                raise ValueError(f"rough_volume_outline volume_index must be consecutive from 1 to {len(volumes)}; found {volume_index_int} at position {position}")
+            for key in ("title", "summary", "goal", "main_conflict", "ending_hook", "target_chapter_count", "target_words"):
+                if key not in volume:
+                    raise ValueError(f"rough_volume_outline volume {position} is missing {key}")
+            seen_volume_indices.append(volume_index_int)
+        if len(seen_volume_indices) != len(set(seen_volume_indices)):
+            raise ValueError("rough_volume_outline volume_index values must be unique and consecutive")
+
+    if step == "rough_chapter_plan":
+        _validate_chapter_sequence(step, structured)
+        for position, chapter in enumerate(structured.get("chapters", []), start=1):
+            for key in ("title", "summary", "chapter_type", "pov_character", "main_event", "conflict", "hook", "target_words"):
+                if key not in chapter:
+                    raise ValueError(f"rough_chapter_plan chapter {position} is missing {key}")
+
+    if step == "chapter_plan":
+        for key in ("continuity_notes", "writing_notes"):
+            if key not in structured:
+                raise ValueError(f"chapter_plan structured payload is missing required field: {key}")
 
 
 @dataclass(frozen=True)
@@ -113,7 +250,9 @@ class BaseAgent:
             raise ValueError(f"LLM returned invalid JSON for {self.artifact_key}: {preview or '<empty>'}") from exc
         if not isinstance(payload, dict):
             raise ValueError("LLM returned a non-object generation payload")
-        return GeneratedArtifactPayload.model_validate(payload)
+        generated_payload = GeneratedArtifactPayload.model_validate(payload)
+        _validate_structured_payload(self.step.value, generated_payload)
+        return generated_payload
 
     def _build_summary(self, payload: GeneratedArtifactPayload) -> ArtifactSummary:
         summary = ArtifactSummary(
@@ -123,6 +262,7 @@ class BaseAgent:
             open_questions=[str(item).strip() for item in payload.open_questions if str(item).strip()],
             best_for_steps=self._best_for_steps(),
             best_for_reason=payload.best_for_reason.strip(),
+            structured=dict(payload.structured or {}),
         )
         summary.summary = summary.overview
         return summary
@@ -163,17 +303,33 @@ class PlanningAgent(BaseAgent):
     def build_variables(self, project: NovelProject, context: AgentContext) -> dict[str, Any]:
         variables = super().build_variables(project, context)
         if self.parent_step is not None:
-            parent_scope_payload = _artifact_scope_payload(self.parent_step.value, context.payload)
-            parent_artifact = next(
-                (
-                    artifact
-                    for artifact in project.artifacts.values()
-                    if _scope_matches(artifact, self.parent_step.value, parent_scope_payload)
-                ),
-                None,
-            )
+            base_artifact = context.payload.get("base_artifact") if isinstance(context.payload, dict) else None
+            parent_artifact = None
+            if isinstance(base_artifact, dict) and base_artifact:
+                summary = base_artifact.get("artifact_summary") or {}
+                parent_artifact = build_artifact(
+                    str(base_artifact.get("artifact_key") or self.parent_step.value),
+                    str(base_artifact.get("artifact_title") or ""),
+                    str(base_artifact.get("artifact_content") or ""),
+                    summary=summary,
+                    **{
+                        key: value
+                        for key, value in dict(base_artifact.get("artifact_metadata") or {}).items()
+                        if value is not None
+                    },
+                )
+            if parent_artifact is None:
+                parent_scope_payload = _artifact_scope_payload(self.parent_step.value, context.payload)
+                parent_artifact = next(
+                    (
+                        artifact
+                        for artifact in project.artifacts.values()
+                        if _scope_matches(artifact, self.parent_step.value, parent_scope_payload)
+                    ),
+                    None,
+                )
             if parent_artifact is not None:
-                variables["parent_artifact_json"] = json.dumps(compact_artifact_context(parent_artifact, excerpt_chars=220, include_excerpt=True), ensure_ascii=False, indent=2)
+                variables["parent_artifact_json"] = json.dumps(_artifact_prompt_context(parent_artifact, excerpt_chars=0), ensure_ascii=False, indent=2)
         return variables
 
 
@@ -214,31 +370,23 @@ class OutlineAgent(BaseAgent):
 
     def build_variables(self, project: NovelProject, context: AgentContext) -> dict[str, Any]:
         variables = super().build_variables(project, context)
-        generation_context = build_generation_context(project, self.step.value, context.payload)
-        project_input = generation_context["project_input"]
-        step_payload = generation_context["step_payload"]
-        target_volume_count = int(step_payload.get("volume_count") or project_input.get("target_volume_count") or 1)
-        target_chapters_per_volume = int(step_payload.get("chapters_per_volume") or project_input.get("target_chapters_per_volume") or 12)
-        variables["outline_targets_json"] = json.dumps(
-            {
-                "target_volume_count": target_volume_count,
-                "target_chapters_per_volume": target_chapters_per_volume,
-                "target_words": int(project_input.get("target_words") or 0),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+        variables["outline_targets_json"] = _build_outline_targets_json(project, context)
+        return variables
+
+
+class RoughVolumeOutlineAgent(PlanningAgent):
+    def __init__(self) -> None:
+        super().__init__("rough_volume_outline", WorkflowStep.ROUGH_VOLUME_OUTLINE, "rough_volume_outline", "rough_volume_outline", "粗卷纲", WorkflowStep.OUTLINE)
+
+    def build_variables(self, project: NovelProject, context: AgentContext) -> dict[str, Any]:
+        variables = super().build_variables(project, context)
+        variables["outline_targets_json"] = _build_outline_targets_json(project, context)
         return variables
 
 
 class VolumeOutlineAgent(PlanningAgent):
     def __init__(self) -> None:
         super().__init__("volume_outline", WorkflowStep.VOLUME_OUTLINE, "volume_outline", "volume_outline", "卷纲设计", WorkflowStep.ROUGH_VOLUME_OUTLINE)
-
-
-class RoughVolumeOutlineAgent(PlanningAgent):
-    def __init__(self) -> None:
-        super().__init__("rough_volume_outline", WorkflowStep.ROUGH_VOLUME_OUTLINE, "rough_volume_outline", "rough_volume_outline", "粗卷纲", WorkflowStep.OUTLINE)
 
 
 class RoughChapterPlanAgent(PlanningAgent):

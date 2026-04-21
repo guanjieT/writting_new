@@ -61,7 +61,7 @@
 - 前端表单字段：`volume_index`、`volume_title`、`volume_summary`、`volume_goal`、`volume_conflict`、`volume_hook`、`target_words`、`target_chapter_count`、`notes`、`temperature`、`max_tokens`
 - 后端请求模型：`VolumeOutlineRequest`
 - 路由：`POST /projects/{project_id}/volume-outline`
-- 说明：`target_words` 和 `target_chapter_count` 也会做项目派生回填。
+- 说明：`target_words` 和 `target_chapter_count` 也会做项目派生回填；提交时会额外携带 `base_artifact`，并且基底选择以最终提交表单里的 `volume_index` 为准，避免页面级选择器和表单值分叉。
 
 ### 粗卷纲
 
@@ -75,6 +75,7 @@
 - 前端表单字段：`volume_index`、`chapter_index`、`chapter_title`、`chapter_summary`、`chapter_type`、`pov_character`、`protagonist_present`、`conflict`、`hook`、`target_words`、`min_words`、`characters`、`introduced_characters`、`scene_summaries`、`plan_notes`、`notes`、`temperature`、`max_tokens`
 - 后端请求模型：`ChapterPlanRequest`
 - 路由：`POST /projects/{project_id}/chapter-plan`
+- 说明：提交时会额外携带 `base_artifact`，并且基底选择以最终提交表单里的 `volume_index` 和 `chapter_index` 为准，避免页面级选择器和表单值分叉。
 
 ### 粗章纲
 
