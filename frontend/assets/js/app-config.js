@@ -701,6 +701,16 @@ function parseRoughChapterPlanSections(snapshot, volumeIndex = 1) {
   return chapters;
 }
 
+export function extractRoughChapterPlanChapterCount(snapshot, volumeIndex = 1) {
+  const roughArtifact = getScopedArtifact(snapshot, 'rough_chapter_plan', { volumeIndex });
+  const structured = getGeneratedStructuredPayload(roughArtifact);
+  if (structured && Array.isArray(structured.chapters) && structured.chapters.length) {
+    const explicitCount = Number(structured.total_target_chapters || 0) || 0;
+    return explicitCount > 0 ? explicitCount : structured.chapters.length;
+  }
+  return parseRoughChapterPlanSections(snapshot, volumeIndex).length;
+}
+
 export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
   const sections = parseOutlineVolumeSections(snapshot);
   if (!sections.length) {

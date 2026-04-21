@@ -1,5 +1,5 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getArtifact, getFieldDisplayValue, getScopedArtifact, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getArtifactForStep, getFieldDisplayValue, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, summarizeList, truncate } from './dom.js';
 import { getPageProjectId, getPreferredStep, setPreferredStep, setSelectedProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderChecklist, renderDependencyList, renderStageOverview, renderTaskList, renderField, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
@@ -48,7 +48,7 @@ function clampWorkflowSelection(snapshot, selection = {}) {
 }
 
 function selectionForStep(step) {
-  return getStepScopeKind(step) === 'chapter' ? currentSelection : {};
+  return getStepScopeKind(step) === 'project' ? {} : currentSelection;
 }
 
 function updateWorkflowSelection(nextSelection) {
@@ -65,8 +65,10 @@ function renderSelectionCard(snapshot) {
   const project = snapshot.project;
   const volumeOptions = Array.from({ length: Math.max(Number(project.input.target_volume_count || 1), 1) }, (_, index) => index + 1);
   const chapterOptions = Array.from({ length: Math.max(Number(project.input.target_chapters_per_volume || 1), 1) }, (_, index) => index + 1);
-  const scopedArtifact = getScopedArtifact(snapshot, currentStep, currentSelection);
+  const scopedArtifact = getArtifactForStep(snapshot, currentStep, currentSelection);
   const stepScopeKind = getStepScopeKind(currentStep);
+  const scopedLabel = stepScopeKind === 'volume' ? '当前卷有对应产物' : stepScopeKind === 'chapter' ? '当前章节有对应产物' : '当前对象有对应产物';
+  const scopeHint = stepScopeKind === 'volume' ? '当前步骤会按这个卷读写与删除。' : stepScopeKind === 'chapter' ? '当前步骤会按这个章节读写与删除。' : '切换到卷级或章节步骤后，会沿用这个上下文。';
 
   return `
     <div class="context-card subtle">
@@ -86,9 +88,9 @@ function renderSelectionCard(snapshot) {
           </select>
         </div>
       </div>
-      <p class="muted">${stepScopeKind === 'chapter' ? '当前步骤会按这个章节读写与删除。' : '切换到章节步骤后，会沿用这个上下文。'}</p>
+      <p class="muted">${scopeHint}</p>
       <div class="chips">
-        ${badge(scopedArtifact ? '当前章节有对应产物' : '当前章节暂无产物', scopedArtifact ? 'success' : 'soft')}
+        ${badge(scopedArtifact ? scopedLabel : `${scopedLabel.replace('有对应产物', '暂无产物')}`, scopedArtifact ? 'success' : 'soft')}
       </div>
     </div>
   `;
@@ -190,7 +192,7 @@ function buildStepForm(step, selection) {
   const primaryFields = fields.filter((field) => !field.advanced).map((field) => ({ ...field, stepKey: step }));
   const advancedFields = fields.filter((field) => field.advanced).map((field) => ({ ...field, stepKey: step }));
   const scopeKind = getStepScopeKind(step);
-  const scopedArtifact = scopeKind === 'chapter' ? getScopedArtifact(currentSnapshot, step, selection) : getArtifact(currentSnapshot, step);
+  const scopedArtifact = getArtifactForStep(currentSnapshot, step, selection);
 
   return `
     <form class="workspace-form" data-step-form="${step}">
@@ -262,7 +264,7 @@ function renderWorkspace() {
 
   form.querySelectorAll('[name="volume_index"], [name="chapter_index"]').forEach((control) => {
     control.addEventListener('change', () => {
-      if (step !== 'chapter') {
+      if (getStepScopeKind(step) === 'project') {
         return;
       }
       updateWorkflowSelection({
@@ -334,7 +336,7 @@ function renderWorkspace() {
 
   deleteButton.addEventListener('click', async () => {
     try {
-      const artifact = getStepScopeKind(step) === 'chapter' ? getScopedArtifact(currentSnapshot, step, stepSelection) : getArtifact(currentSnapshot, step);
+      const artifact = getArtifactForStep(currentSnapshot, step, stepSelection);
       const result = await deleteStepArtifact({
         projectId: currentSnapshot.project.project_id,
         artifactKey: artifact?.key,

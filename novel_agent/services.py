@@ -102,6 +102,9 @@ def _project_step_from_artifacts(artifacts: dict[str, Artifact]) -> WorkflowStep
     latest_step = WorkflowStep.CREATED
     latest_rank = -1
     for artifact in artifacts.values():
+        metadata = artifact.metadata or {}
+        if metadata.get("stale") or metadata.get("state") == "stale":
+            continue
         step_key = _artifact_step_key(artifact)
         step_rank = WORKFLOW_STEP_RANK.get(step_key)
         if step_rank is None or step_rank < latest_rank:

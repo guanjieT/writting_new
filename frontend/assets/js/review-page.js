@@ -1,5 +1,5 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getArtifact, getScopedArtifact, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getArtifactForStep, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, truncate } from './dom.js';
 import { getPageProjectId, setSelectedProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 
@@ -39,8 +39,11 @@ function buildStepUrl(step, projectId) {
   if (projectId) {
     url.searchParams.set('project_id', projectId);
   }
-  if (getStepScopeKind(step) === 'chapter') {
+  const scopeKind = getStepScopeKind(step);
+  if (scopeKind !== 'project') {
     url.searchParams.set('volume_index', String(currentSelection.volumeIndex));
+  }
+  if (scopeKind === 'chapter') {
     url.searchParams.set('chapter_index', String(currentSelection.chapterIndex));
   }
   return `${url.pathname}${url.search}`;
@@ -56,7 +59,7 @@ function clampReviewSelection(snapshot, selection = {}) {
 }
 
 function selectionForStep(step) {
-  return getStepScopeKind(step) === 'chapter' ? currentSelection : {};
+  return getStepScopeKind(step) === 'project' ? {} : currentSelection;
 }
 
 function renderSelection(snapshot) {
@@ -118,7 +121,7 @@ function buildIssueQueue(snapshot, tasks) {
   for (const stepDef of workflowSteps) {
     const step = stepDef.key;
     const selection = selectionForStep(step);
-    const artifact = getStepScopeKind(step) === 'chapter' ? getScopedArtifact(snapshot, step, selection) : getArtifact(snapshot, step);
+    const artifact = getArtifactForStep(snapshot, step, selection);
     const latestTask = [...tasks].filter((task) => task.task_name === step).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
     if (latestTask?.status === 'failed') {
@@ -145,7 +148,7 @@ function buildIssueQueue(snapshot, tasks) {
     }
   }
 
-    if (getScopedArtifact(snapshot, 'chapter', currentSelection) && !getScopedArtifact(snapshot, 'consistency', currentSelection)) {
+  if (getArtifactForStep(snapshot, 'chapter', currentSelection) && !getArtifactForStep(snapshot, 'consistency', currentSelection)) {
     issues.push({
       severity: '中',
       tone: 'warn',
@@ -156,7 +159,7 @@ function buildIssueQueue(snapshot, tasks) {
     });
   }
 
-    if (getScopedArtifact(snapshot, 'chapter', currentSelection) && !getScopedArtifact(snapshot, 'revision', currentSelection)) {
+  if (getArtifactForStep(snapshot, 'chapter', currentSelection) && !getArtifactForStep(snapshot, 'revision', currentSelection)) {
     issues.push({
       severity: '中',
       tone: 'warn',
@@ -264,7 +267,7 @@ function renderMatrix(snapshot, projectId) {
         ${group.steps.map((step) => {
           const selection = selectionForStep(step);
           const status = getStepStatus(step, snapshot, dependencyMap, currentTasks, selection);
-          const artifact = getStepScopeKind(step) === 'chapter' ? getScopedArtifact(snapshot, step, selection) : getArtifact(snapshot, step);
+          const artifact = getArtifactForStep(snapshot, step, selection);
           const deps = getStepDependencies(step, dependencyMap);
           return `
             <article class="review-card">

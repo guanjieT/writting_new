@@ -1,9 +1,8 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getFieldDisplayValue, getScopedArtifact, getStepLabel, getStepMeta, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, extractRoughChapterPlanChapterCount, getFieldDisplayValue, getScopedArtifact, getStepLabel, getStepMeta, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderDependencyList, renderField, renderStageOverview, renderTaskList, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
-import { getArtifact, getScopedArtifact } from './app-config.js';
 
 const PAGE_KEY = document.body.dataset.page || 'outline';
 const PAGE_CONFIG = {
@@ -90,7 +89,7 @@ function getSelectedChapterCount(snapshot, volumeIndex) {
 }
 
 function extractChapterCount(snapshot, volumeIndex) {
-  return snapshot?.project?.input?.target_chapters_per_volume || 12;
+  return extractRoughChapterPlanChapterCount(snapshot, volumeIndex) || snapshot?.project?.input?.target_chapters_per_volume || 12;
 }
 
 function renderProjectMini(snapshot, selection) {
@@ -349,7 +348,7 @@ function renderWorkspace(selection) {
 
     deleteButton.addEventListener('click', async () => {
       try {
-        const artifact = getScopedArtifact(currentSnapshot, step, stepSelection) || getArtifact(currentSnapshot, step);
+        const artifact = getScopedArtifact(currentSnapshot, step, stepSelection);
         const result = await deleteStepArtifact({
           projectId: currentSnapshot.project.project_id,
           artifactKey: artifact?.key,

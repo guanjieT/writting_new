@@ -315,5 +315,14 @@ class ScopeAndStructureTests(unittest.TestCase):
 
         self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.MEMORY)
 
+    def test_project_step_recovery_ignores_stale_artifacts(self) -> None:
+        project = self.project_service.create(ProjectInput(title="失效回推项目", genre="奇幻"))
+        project.artifacts = {
+            "chapter:1:1": Artifact(key="chapter:1:1", title="章节正文", content="正文", metadata={"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+            "memory:1:1": Artifact(key="memory:1:1", title="记忆整理", content="记忆", metadata={"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1, "stale": True, "state": "stale"}),
+        }
+
+        self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.CHAPTER)
+
 if __name__ == "__main__":
     unittest.main()
