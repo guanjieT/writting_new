@@ -56,16 +56,7 @@ def _artifact_scope_payload(step_key: str, payload: Mapping[str, Any]) -> dict[s
 
 
 def task_scope_from_payload(step_key: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-    scope_kind = _artifact_scope_kind(step_key)
-    if scope_kind == "volume":
-        return {"scope_kind": scope_kind, "volume_index": max(int(payload.get("volume_index") or 1), 1)}
-    if scope_kind == "chapter":
-        return {
-            "scope_kind": scope_kind,
-            "volume_index": max(int(payload.get("volume_index") or 1), 1),
-            "chapter_index": max(int(payload.get("chapter_index") or 1), 1),
-        }
-    return {"scope_kind": "project"}
+    return _artifact_scope_payload(step_key, payload)
 
 
 def _artifact_key(step_key: str, scope_payload: Mapping[str, Any]) -> str:

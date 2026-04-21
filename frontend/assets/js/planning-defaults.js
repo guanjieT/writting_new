@@ -100,6 +100,31 @@ export function extractChapterPlanDefaults(snapshot, volumeIndex = 1, chapterInd
   };
 }
 
+export function extractChapterDraftDefaults(snapshot, volumeIndex = 1, chapterIndex = 1) {
+  const artifact = getScopedArtifact(snapshot, 'chapter_plan', { volumeIndex, chapterIndex });
+  const structured = getGeneratedStructuredPayload(artifact);
+  if (!structured) {
+    return null;
+  }
+
+  const sceneSummaries = Array.isArray(structured.scene_summaries)
+    ? structured.scene_summaries.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  const continuityNotes = Array.isArray(structured.continuity_notes)
+    ? structured.continuity_notes.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  const writingNotes = Array.isArray(structured.writing_notes)
+    ? structured.writing_notes.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    chapter_goal: String(structured.summary || structured.main_event || artifact?.summary?.overview || '').trim(),
+    scene_beats: sceneSummaries,
+    notes: [...continuityNotes, ...writingNotes],
+    target_words: positiveNumber(structured.target_words),
+  };
+}
+
 export function inferChapterCountForVolume(snapshot, volumeIndex = 1) {
   return getRoughChapterPlanChapterCount(snapshot, volumeIndex)
     || extractVolumeOutlineChapterCount(snapshot, volumeIndex)
@@ -183,6 +208,26 @@ function renderInputValue(field, project, snapshot, selection = {}) {
       }
       if (field.key === 'scene_summaries') {
         return chapterDefaults.scene_summaries || [];
+      }
+    }
+  }
+  if (field.stepKey === 'chapter') {
+    const draftDefaults = extractChapterDraftDefaults(snapshot, volumeIndex, chapterIndex);
+    if (draftDefaults) {
+      if (field.key === 'chapter_goal') {
+        return draftDefaults.chapter_goal || '';
+      }
+      if (field.key === 'scene_beats') {
+        return draftDefaults.scene_beats || [];
+      }
+      if (field.key === 'notes' && draftDefaults.notes?.length) {
+        return [
+          ...draftDefaults.notes,
+          ...collectProjectListValues(projectInput, PROJECT_NOTE_SOURCES.chapter),
+        ];
+      }
+      if (field.key === 'target_words' && draftDefaults.target_words) {
+        return draftDefaults.target_words;
       }
     }
   }

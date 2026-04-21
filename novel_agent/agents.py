@@ -426,9 +426,9 @@ class ChapterPlanAgent(PlanningAgent):
         super().__init__("chapter_plan", WorkflowStep.CHAPTER_PLAN, "chapter_plan", "chapter_plan", "章节计划", WorkflowStep.ROUGH_CHAPTER_PLAN)
 
 
-class ChapterAgent(BaseAgent):
+class ChapterAgent(PlanningAgent):
     def __init__(self) -> None:
-        super().__init__("chapter", WorkflowStep.CHAPTER, "chapter", "chapter", "章节草稿")
+        super().__init__("chapter", WorkflowStep.CHAPTER, "chapter", "chapter", "章节草稿", WorkflowStep.CHAPTER_PLAN)
 
 
 class RevisionAgent(BaseAgent):

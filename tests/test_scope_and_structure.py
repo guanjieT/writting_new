@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 
-from novel_agent.agents import BaseAgent
-from novel_agent.domain import Artifact, ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError, WorkflowStep
+from novel_agent.agents import BaseAgent, ChapterAgent
+from novel_agent.domain import AgentContext, Artifact, ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError, WorkflowStep
+from novel_agent.infrastructure import FilePromptStore
 from novel_agent.orchestrator import NovelOrchestrator
 from novel_agent.services import AuditService, ProjectService, _artifact_key, _project_step_from_artifacts, build_artifact
 
@@ -348,6 +350,59 @@ class ScopeAndStructureTests(unittest.TestCase):
         generated = agent._parse_generated_payload(json.dumps(payload, ensure_ascii=False))
 
         self.assertEqual([chapter["chapter_index"] for chapter in generated.structured["chapters"]], [1, 2])
+
+    def test_chapter_agent_uses_current_chapter_plan_as_parent(self) -> None:
+        first_plan = build_artifact(
+            _artifact_key("chapter_plan", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+            "第一章计划",
+            "第一章计划正文",
+            summary=ArtifactSummary(structured={
+                "volume_index": 1,
+                "chapter_index": 1,
+                "summary": "第一章目标",
+                "main_event": "第一章事件",
+                "scene_summaries": ["第一章场景"],
+            }),
+            step="chapter_plan",
+            scope_kind="chapter",
+            volume_index=1,
+            chapter_index=1,
+        )
+        second_plan = build_artifact(
+            _artifact_key("chapter_plan", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 2}),
+            "第二章计划",
+            "第二章计划正文",
+            summary=ArtifactSummary(structured={
+                "volume_index": 1,
+                "chapter_index": 2,
+                "summary": "第二章目标",
+                "main_event": "第二章事件",
+                "scene_summaries": ["第二章场景"],
+            }),
+            step="chapter_plan",
+            scope_kind="chapter",
+            volume_index=1,
+            chapter_index=2,
+        )
+
+        for artifact in (first_plan, second_plan):
+            self.project_service.register_generated_artifact(self.project.project_id, artifact)
+
+        project = self.project_service.get(self.project.project_id)
+        agent = ChapterAgent()
+        variables = agent.build_variables(project, AgentContext(project_id=project.project_id, payload={"volume_index": 1, "chapter_index": 2}))
+        parent = json.loads(variables["parent_artifact_json"])
+        selected_artifacts = json.loads(variables["artifacts_json"])
+        prompt = FilePromptStore(Path("/tmp/nonexistent-prompts")).load("chapter").format(**variables)
+
+        self.assertEqual(parent["key"], second_plan.key)
+        self.assertEqual(selected_artifacts["chapter_plan"]["key"], second_plan.key)
+        self.assertIn("当前章节计划", prompt)
+        self.assertIn("第二章计划", prompt)
+        self.assertNotIn("第一章计划", prompt)
+
+        first_variables = agent.build_variables(project, AgentContext(project_id=project.project_id, payload={"volume_index": 1, "chapter_index": 1}))
+        self.assertEqual(json.loads(first_variables["parent_artifact_json"])["key"], first_plan.key)
 
 if __name__ == "__main__":
     unittest.main()

@@ -409,6 +409,9 @@ function buildBaseArtifactPayload(step, snapshot, selection = {}, payload = {}) 
   if (step === 'chapter_plan') {
     return attachArtifact(getScopedArtifact(snapshot, 'rough_chapter_plan', submittedSelection), 'rough_chapter_plan');
   }
+  if (step === 'chapter') {
+    return attachArtifact(getScopedArtifact(snapshot, 'chapter_plan', submittedSelection), 'chapter_plan');
+  }
   return null;
 }
 
