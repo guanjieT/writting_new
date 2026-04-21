@@ -1,5 +1,5 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getArtifact, getFieldDisplayValue, getStepDependencies, getStepLabel, getStepMeta, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getArtifact, getFieldDisplayValue, getScopedArtifact, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, summarizeList, truncate } from './dom.js';
 import { getPageProjectId, getPreferredStep, setPreferredStep, setSelectedProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderChecklist, renderDependencyList, renderStageOverview, renderTaskList, renderField, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
@@ -21,6 +21,85 @@ let dependencyMap = Object.fromEntries(FALLBACK_WORKFLOW_STEPS.map((step) => [st
 let currentSnapshot = null;
 let currentTasks = [];
 let currentStep = '';
+let currentSelection = getWorkflowSelectionFromUrl();
+
+function getWorkflowSelectionFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    volumeIndex: Math.max(Number(params.get('volume_index') || '1') || 1, 1),
+    chapterIndex: Math.max(Number(params.get('chapter_index') || '1') || 1, 1),
+  };
+}
+
+function syncWorkflowSelectionToUrl(selection) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('volume_index', String(selection.volumeIndex || 1));
+  url.searchParams.set('chapter_index', String(selection.chapterIndex || 1));
+  window.history.replaceState({}, '', url);
+}
+
+function clampWorkflowSelection(snapshot, selection = {}) {
+  const volumeCount = Math.max(Number(snapshot?.project?.input?.target_volume_count || 1), 1);
+  const chapterCount = Math.max(Number(snapshot?.project?.input?.target_chapters_per_volume || 1), 1);
+  return {
+    volumeIndex: Math.min(Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1), volumeCount),
+    chapterIndex: Math.min(Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1), chapterCount),
+  };
+}
+
+function selectionForStep(step) {
+  return getStepScopeKind(step) === 'chapter' ? currentSelection : {};
+}
+
+function updateWorkflowSelection(nextSelection) {
+  currentSelection = clampWorkflowSelection(currentSnapshot, nextSelection);
+  syncWorkflowSelectionToUrl(currentSelection);
+  renderPage();
+}
+
+function renderSelectionCard(snapshot) {
+  if (!snapshot) {
+    return '';
+  }
+
+  const project = snapshot.project;
+  const volumeOptions = Array.from({ length: Math.max(Number(project.input.target_volume_count || 1), 1) }, (_, index) => index + 1);
+  const chapterOptions = Array.from({ length: Math.max(Number(project.input.target_chapters_per_volume || 1), 1) }, (_, index) => index + 1);
+  const scopedArtifact = getScopedArtifact(snapshot, currentStep, currentSelection);
+  const stepScopeKind = getStepScopeKind(currentStep);
+
+  return `
+    <div class="context-card subtle">
+      <p class="eyebrow">章节上下文</p>
+      <h3>第 ${currentSelection.volumeIndex} 卷 · 第 ${currentSelection.chapterIndex} 章</h3>
+      <div class="form-grid">
+        <div class="field">
+          <label for="workflow-volume-index">卷序号</label>
+          <select id="workflow-volume-index" data-workflow-volume-index>
+            ${volumeOptions.map((value) => `<option value="${value}" ${value === currentSelection.volumeIndex ? 'selected' : ''}>第 ${value} 卷</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label for="workflow-chapter-index">章节序号</label>
+          <select id="workflow-chapter-index" data-workflow-chapter-index>
+            ${chapterOptions.map((value) => `<option value="${value}" ${value === currentSelection.chapterIndex ? 'selected' : ''}>第 ${value} 章</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <p class="muted">${stepScopeKind === 'chapter' ? '当前步骤会按这个章节读写与删除。' : '切换到章节步骤后，会沿用这个上下文。'}</p>
+      <div class="chips">
+        ${badge(scopedArtifact ? '当前章节有对应产物' : '当前章节暂无产物', scopedArtifact ? 'success' : 'soft')}
+      </div>
+    </div>
+  `;
+}
+
+function renderPage() {
+  renderProjectMini(currentSnapshot);
+  renderStageNav();
+  renderWorkspace();
+  renderInspector();
+}
 
 function chooseDefaultStep() {
   const preferred = getPreferredStep(PAGE_KEY);
@@ -53,7 +132,17 @@ function renderProjectMini(snapshot) {
         ${badge(`${project.input.target_chapters_per_volume} 章/卷`, 'soft')}
       </div>
     </div>
+    ${renderSelectionCard(snapshot)}
   `;
+
+  projectMini.querySelectorAll('[data-workflow-volume-index], [data-workflow-chapter-index]').forEach((control) => {
+    control.addEventListener('change', () => {
+      updateWorkflowSelection({
+        volumeIndex: Number(projectMini.querySelector('[data-workflow-volume-index]')?.value || currentSelection.volumeIndex || 1) || 1,
+        chapterIndex: Number(projectMini.querySelector('[data-workflow-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
+      });
+    });
+  });
 }
 
 function renderStageNav() {
@@ -64,7 +153,7 @@ function renderStageNav() {
       </div>
       <div class="nav-list">
         ${group.steps.map((step) => {
-          const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks);
+          const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks, selectionForStep(step));
           return `
             <button type="button" class="nav-item ${step === currentStep ? 'active' : ''}" data-select-step="${step}">
               <div>
@@ -94,29 +183,35 @@ function renderStageNav() {
   });
 }
 
-function buildStepForm(step) {
+function buildStepForm(step, selection) {
   const meta = getStepMeta(step);
   const project = currentSnapshot?.project;
   const fields = meta.fields || [];
   const primaryFields = fields.filter((field) => !field.advanced).map((field) => ({ ...field, stepKey: step }));
   const advancedFields = fields.filter((field) => field.advanced).map((field) => ({ ...field, stepKey: step }));
+  const scopeKind = getStepScopeKind(step);
+  const scopedArtifact = scopeKind === 'chapter' ? getScopedArtifact(currentSnapshot, step, selection) : getArtifact(currentSnapshot, step);
 
   return `
     <form class="workspace-form" data-step-form="${step}">
       <div class="form-grid">
-        ${primaryFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot))).join('')}
+        ${primaryFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, selection))).join('')}
       </div>
       ${advancedFields.length ? `
         <details class="advanced-panel">
           <summary>高级设置</summary>
           <div class="form-grid compact-grid">
-            ${advancedFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot))).join('')}
+            ${advancedFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, selection))).join('')}
           </div>
         </details>
       ` : ''}
+      ${scopeKind === 'chapter' && step !== 'chapter' ? `
+        <input type="hidden" name="volume_index" value="${selection.volumeIndex}" />
+        <input type="hidden" name="chapter_index" value="${selection.chapterIndex}" />
+      ` : ''}
       <div class="actions-row wrap">
-        <button class="primary" type="submit" data-run-step="${step}">${isUnlocked(step, currentSnapshot, dependencyMap) ? '执行当前对象' : '等待前置完成'}</button>
-        <button class="ghost" type="button" data-delete-step="${step}" ${getArtifact(currentSnapshot, step) ? '' : 'disabled'}>删除当前产物</button>
+        <button class="primary" type="submit" data-run-step="${step}">${isUnlocked(step, currentSnapshot, dependencyMap, selection) ? '执行当前对象' : '等待前置完成'}</button>
+        <button class="ghost" type="button" data-delete-step="${step}" ${scopedArtifact ? '' : 'disabled'}>删除当前产物</button>
         <span class="muted">删除会级联清理依赖此对象的下游内容。</span>
       </div>
       <div class="notice info" data-step-message hidden></div>
@@ -131,9 +226,10 @@ function renderWorkspace() {
   }
   const step = currentStep;
   const meta = getStepMeta(step);
-  const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks);
+  const stepSelection = selectionForStep(step);
+  const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks, stepSelection);
   workspaceTitle.textContent = `${meta.label} · ${meta.objectName}`;
-  overview.innerHTML = renderStageOverview(VISIBLE_STEPS, currentSnapshot, dependencyMap, currentTasks);
+  overview.innerHTML = renderStageOverview(VISIBLE_STEPS, currentSnapshot, dependencyMap, currentTasks, currentSelection);
   workspace.innerHTML = `
     <section class="workspace-card">
       <div class="workspace-card-head">
@@ -146,10 +242,10 @@ function renderWorkspace() {
       </div>
       <div class="workspace-card-grid">
         <div>
-          ${buildStepForm(step)}
+          ${buildStepForm(step, stepSelection)}
         </div>
         <div>
-          ${renderArtifactBlock(currentSnapshot, step)}
+          ${renderArtifactBlock(currentSnapshot, step, stepSelection)}
         </div>
       </div>
     </section>
@@ -163,6 +259,18 @@ function renderWorkspace() {
   if (step === 'volume_outline') {
     hydrateVolumeOutlineDefaults(form, currentSnapshot);
   }
+
+  form.querySelectorAll('[name="volume_index"], [name="chapter_index"]').forEach((control) => {
+    control.addEventListener('change', () => {
+      if (step !== 'chapter') {
+        return;
+      }
+      updateWorkflowSelection({
+        volumeIndex: Number(form.elements.namedItem('volume_index')?.value || currentSelection.volumeIndex || 1) || 1,
+        chapterIndex: Number(form.elements.namedItem('chapter_index')?.value || currentSelection.chapterIndex || 1) || 1,
+      });
+    });
+  });
 
   form.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-ai-complete]');
@@ -207,6 +315,7 @@ function renderWorkspace() {
         step,
         form,
         snapshot: currentSnapshot,
+        selection: stepSelection,
         onProgress(message) {
           messageBox.hidden = false;
           messageBox.className = 'notice info';
@@ -225,7 +334,7 @@ function renderWorkspace() {
 
   deleteButton.addEventListener('click', async () => {
     try {
-      const artifact = getArtifact(currentSnapshot, step);
+      const artifact = getStepScopeKind(step) === 'chapter' ? getScopedArtifact(currentSnapshot, step, stepSelection) : getArtifact(currentSnapshot, step);
       const result = await deleteStepArtifact({
         projectId: currentSnapshot.project.project_id,
         artifactKey: artifact?.key,
@@ -251,6 +360,7 @@ function renderInspector() {
 
   const project = currentSnapshot.project;
   const stepTasks = currentTasks.filter((task) => task.task_name === currentStep);
+  const stepSelection = selectionForStep(currentStep);
   inspector.innerHTML = `
     <div class="stack-list">
       <section class="context-card">
@@ -266,7 +376,7 @@ function renderInspector() {
       <section class="context-card">
         <p class="eyebrow">依赖检查</p>
         <h3>${escapeHtml(getStepLabel(currentStep, workflowSteps))}</h3>
-        ${renderDependencyList(currentStep, dependencyMap, currentSnapshot)}
+        ${renderDependencyList(currentStep, dependencyMap, currentSnapshot, currentSelection)}
       </section>
 
       <section class="context-card">
@@ -317,13 +427,12 @@ async function loadPage() {
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;
+  currentSelection = clampWorkflowSelection(snapshot, getWorkflowSelectionFromUrl());
+  syncWorkflowSelectionToUrl(currentSelection);
   setSelectedProjectId(projectId);
 
   currentStep = VISIBLE_STEPS.includes(currentStep) ? currentStep : chooseDefaultStep();
-  renderProjectMini(snapshot);
-  renderStageNav();
-  renderWorkspace();
-  renderInspector();
+  renderPage();
 }
 
 async function init() {

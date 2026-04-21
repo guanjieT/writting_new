@@ -21,10 +21,10 @@ WORKFLOW_STEPS: tuple[WorkflowStepSpec, ...] = (
     WorkflowStepSpec("volume_outline", "完善卷纲", ("rough_volume_outline",), page="volume-outline", scope="volume"),
     WorkflowStepSpec("rough_chapter_plan", "粗章纲", ("volume_outline",), page="volume-outline", scope="volume"),
     WorkflowStepSpec("chapter_plan", "完善章节计划", ("rough_chapter_plan",), page="chapter-plan", scope="chapter"),
-    WorkflowStepSpec("chapter", "章节生成", ("chapter_plan",)),
-    WorkflowStepSpec("revision", "修订", ("chapter",)),
-    WorkflowStepSpec("consistency", "一致性检查", ("chapter",)),
-    WorkflowStepSpec("memory", "记忆整理", ("chapter",)),
+    WorkflowStepSpec("chapter", "章节生成", ("chapter_plan",), scope="chapter"),
+    WorkflowStepSpec("revision", "修订", ("chapter",), scope="chapter"),
+    WorkflowStepSpec("consistency", "一致性检查", ("chapter",), scope="chapter"),
+    WorkflowStepSpec("memory", "记忆整理", ("chapter",), scope="chapter"),
 )
 
 

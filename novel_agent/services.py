@@ -10,6 +10,7 @@ from .workflow_spec import WORKFLOW_STEPS, workflow_dependency_map
 
 
 WORKFLOW_ORDER = [step.key for step in WORKFLOW_STEPS]
+WORKFLOW_STEP_RANK = {step_key: index for index, step_key in enumerate(WORKFLOW_ORDER)}
 WORKFLOW_CHILDREN: dict[str, set[str]] = {}
 WORKFLOW_DESCENDANTS: dict[str, list[str]] = {}
 WORKFLOW_SCOPE_KIND = {step.key: step.scope for step in WORKFLOW_STEPS}
@@ -91,13 +92,24 @@ def _artifact_matches_descendant_scope(artifact: Artifact, step_key: str, scope_
 
 
 def _artifact_step_key(artifact: Artifact) -> str:
-    return str(artifact.metadata.get("step") or artifact.key)
+    metadata_step = str(artifact.metadata.get("step") or "").strip()
+    if metadata_step:
+        return metadata_step
+    return str(artifact.key).split(":", 1)[0]
 
 
 def _project_step_from_artifacts(artifacts: dict[str, Artifact]) -> WorkflowStep:
-    for step_key in reversed(WORKFLOW_ORDER):
-        if step_key in artifacts:
-            return WorkflowStep(step_key)
+    latest_step = WorkflowStep.CREATED
+    latest_rank = -1
+    for artifact in artifacts.values():
+        step_key = _artifact_step_key(artifact)
+        step_rank = WORKFLOW_STEP_RANK.get(step_key)
+        if step_rank is None or step_rank < latest_rank:
+            continue
+        latest_step = WorkflowStep(step_key)
+        latest_rank = step_rank
+    if latest_rank >= 0:
+        return latest_step
     return WorkflowStep.CREATED
 
 

@@ -584,8 +584,8 @@ function parseOutlineVolumeSections(snapshot) {
   return sections;
 }
 
-function parseRoughChapterPlanSections(snapshot) {
-  const roughArtifact = getArtifact(snapshot, 'rough_chapter_plan');
+function parseRoughChapterPlanSections(snapshot, volumeIndex = 1) {
+  const roughArtifact = getScopedArtifact(snapshot, 'rough_chapter_plan', { volumeIndex });
   const structured = getGeneratedStructuredPayload(roughArtifact);
   if (structured && Array.isArray(structured.chapters) && structured.chapters.length) {
     return structured.chapters
@@ -735,7 +735,7 @@ export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
 }
 
 export function extractChapterPlanDefaults(snapshot, volumeIndex = 1, chapterIndex = 1) {
-  const chapters = parseRoughChapterPlanSections(snapshot);
+  const chapters = parseRoughChapterPlanSections(snapshot, volumeIndex);
   if (!chapters.length) {
     return null;
   }
@@ -835,7 +835,7 @@ export function renderInputValue(field, project, snapshot, selection = {}) {
     }
   }
   if (field.key === 'chapters_per_volume' || field.key === 'target_chapter_count') {
-    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, 1);
+    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1);
     return outlineDefaults?.target_chapter_count || projectInput.target_chapters_per_volume || 12;
   }
   if (field.key === 'target_words') {

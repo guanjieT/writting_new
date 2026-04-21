@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from novel_agent.domain import ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError
+from novel_agent.domain import ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError, WorkflowStep
 from novel_agent.orchestrator import NovelOrchestrator
-from novel_agent.services import AuditService, ProjectService, _artifact_key, build_artifact
+from novel_agent.services import AuditService, ProjectService, _artifact_key, _project_step_from_artifacts, build_artifact
 
 
 class MemoryProjectRepository:
@@ -206,6 +206,104 @@ class ScopeAndStructureTests(unittest.TestCase):
         self.assertNotIn(revision.key, project.artifacts)
         self.assertNotIn(consistency.key, project.artifacts)
         self.assertNotIn(memory.key, project.artifacts)
+
+    def test_two_volumes_two_chapters_keep_scopes_isolated_and_reconstruct_status(self) -> None:
+        artifacts = [
+            build_artifact(
+                _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+                "章节正文",
+                "第一卷第一章",
+                summary=ArtifactSummary(),
+                step="chapter",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=1,
+            ),
+            build_artifact(
+                _artifact_key("revision", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+                "修订",
+                "第一卷第一章修订",
+                summary=ArtifactSummary(),
+                step="revision",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=1,
+            ),
+            build_artifact(
+                _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 2}),
+                "章节正文",
+                "第一卷第二章",
+                summary=ArtifactSummary(),
+                step="chapter",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=2,
+            ),
+            build_artifact(
+                _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 1}),
+                "章节正文",
+                "第二卷第一章",
+                summary=ArtifactSummary(),
+                step="chapter",
+                scope_kind="chapter",
+                volume_index=2,
+                chapter_index=1,
+            ),
+            build_artifact(
+                _artifact_key("consistency", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 1}),
+                "一致性检查",
+                "第二卷第一章一致性",
+                summary=ArtifactSummary(),
+                step="consistency",
+                scope_kind="chapter",
+                volume_index=2,
+                chapter_index=1,
+            ),
+            build_artifact(
+                _artifact_key("memory", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 1}),
+                "记忆整理",
+                "第二卷第一章记忆",
+                summary=ArtifactSummary(),
+                step="memory",
+                scope_kind="chapter",
+                volume_index=2,
+                chapter_index=1,
+            ),
+            build_artifact(
+                _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 2}),
+                "章节正文",
+                "第二卷第二章",
+                summary=ArtifactSummary(),
+                step="chapter",
+                scope_kind="chapter",
+                volume_index=2,
+                chapter_index=2,
+            ),
+        ]
+
+        for artifact in artifacts:
+            self.project_service.register_generated_artifact(self.project.project_id, artifact)
+
+        project = self.project_service.get(self.project.project_id)
+        self.assertEqual(len(project.artifacts), 7)
+        self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.MEMORY)
+        self.assertIn(_artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}), project.artifacts)
+        self.assertIn(_artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 2}), project.artifacts)
+
+        project, removed = self.project_service.remove_artifact(
+            self.project.project_id,
+            _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 1}),
+        )
+
+        self.assertEqual(set(removed), {
+            _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 1}),
+            _artifact_key("consistency", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 1}),
+            _artifact_key("memory", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 1}),
+        })
+        self.assertIn(_artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}), project.artifacts)
+        self.assertIn(_artifact_key("revision", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}), project.artifacts)
+        self.assertIn(_artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 2}), project.artifacts)
+        self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.REVISION)
 
 
 if __name__ == "__main__":
