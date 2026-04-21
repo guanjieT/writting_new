@@ -1,8 +1,9 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, extractRoughChapterPlanChapterCount, getFieldDisplayValue, getScopedArtifact, getStepLabel, getStepMeta, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, extractRoughChapterPlanChapterCount, extractVolumeOutlineDefaults, getArtifactForStep, getFieldDisplayValue, getStepLabel, getStepMeta, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderDependencyList, renderField, renderStageOverview, renderTaskList, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
+import { clampScopeSelection, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
 
 const PAGE_KEY = document.body.dataset.page || 'outline';
 const PAGE_CONFIG = {
@@ -41,23 +42,8 @@ let dependencyMap = Object.fromEntries(FALLBACK_WORKFLOW_STEPS.map((step) => [st
 let currentSnapshot = null;
 let currentTasks = [];
 
-function getQuerySelection() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    volumeIndex: Math.max(Number(params.get('volume_index') || '1') || 1, 1),
-    chapterIndex: Math.max(Number(params.get('chapter_index') || '1') || 1, 1),
-  };
-}
-
-function setQuerySelection(selection) {
-  const url = new URL(window.location.href);
-  url.searchParams.set('volume_index', String(selection.volumeIndex || 1));
-  url.searchParams.set('chapter_index', String(selection.chapterIndex || 1));
-  window.history.replaceState({}, '', url);
-}
-
 function reloadWithSelection(nextSelection) {
-  setQuerySelection(nextSelection);
+  syncScopeSelectionToUrl(nextSelection);
   return loadPage();
 }
 
@@ -75,21 +61,15 @@ function buildSelectionUrl(path, projectId, selection) {
   return `${url.pathname}${url.search}`;
 }
 
-function getPageSelection(snapshot) {
-  const selection = getQuerySelection();
-  const volumeCount = Math.max(Number(snapshot?.project?.input?.target_volume_count || 1), 1);
-  selection.volumeIndex = Math.min(selection.volumeIndex, volumeCount);
-  const chapterCount = Math.max(Number(getSelectedChapterCount(snapshot, selection.volumeIndex)), 1);
-  selection.chapterIndex = Math.min(selection.chapterIndex, chapterCount);
-  return selection;
-}
-
 function getSelectedChapterCount(snapshot, volumeIndex) {
   return extractChapterCount(snapshot, volumeIndex);
 }
 
 function extractChapterCount(snapshot, volumeIndex) {
-  return extractRoughChapterPlanChapterCount(snapshot, volumeIndex) || snapshot?.project?.input?.target_chapters_per_volume || 12;
+  return extractRoughChapterPlanChapterCount(snapshot, volumeIndex)
+    || extractVolumeOutlineDefaults(snapshot, volumeIndex)?.target_chapter_count
+    || snapshot?.project?.input?.target_chapters_per_volume
+    || 12;
 }
 
 function renderProjectMini(snapshot, selection) {
@@ -135,7 +115,7 @@ function renderSelection(snapshot, selection) {
   const project = snapshot?.project;
   const volumeCount = Math.max(Number(project?.input?.target_volume_count || 1), 1);
   const volumeOptions = Array.from({ length: volumeCount }, (_, index) => index + 1);
-  const chapterCount = Math.max(Number(extractChapterCount(snapshot, selection.volumeIndex)), 1);
+  const chapterCount = Math.max(Number(getSelectedChapterCount(snapshot, selection.volumeIndex)), 1);
   const chapterOptions = Array.from({ length: chapterCount }, (_, index) => index + 1);
 
   selectionPanel.innerHTML = PAGE_KEY === 'outline' ? `
@@ -215,9 +195,9 @@ function actionLabel(step, artifact) {
 function renderStepCard(step, selection) {
   const project = currentSnapshot?.project;
   const meta = getStepMeta(step);
-  const stepSelection = step === 'volume_outline' || step === 'rough_chapter_plan' ? { volumeIndex: selection.volumeIndex } : step === 'chapter_plan' ? selection : {};
+  const stepSelection = selectionForStep(step, selection);
   const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks, stepSelection);
-  const artifact = getScopedArtifact(currentSnapshot, step, stepSelection);
+  const artifact = getArtifactForStep(currentSnapshot, step, stepSelection);
   const unlocked = isUnlocked(step, currentSnapshot, dependencyMap, stepSelection);
   const fields = (meta.fields || []).map((field) => ({ ...field, stepKey: step }));
   const primaryFields = fields.filter((field) => !field.advanced);
@@ -264,7 +244,7 @@ function renderWorkspace(selection) {
   const steps = PAGE.steps;
   pageTitle.textContent = PAGE.title;
   pageSubtitle.textContent = PAGE.description;
-  overview.innerHTML = renderStageOverview(steps, currentSnapshot, dependencyMap, currentTasks, PAGE_KEY === 'outline' ? {} : PAGE_KEY === 'volume-outline' ? { volumeIndex: selection.volumeIndex } : selection);
+  overview.innerHTML = renderStageOverview(steps, currentSnapshot, dependencyMap, currentTasks, PAGE_KEY === 'outline' ? {} : selectionForStep(steps[0], selection));
   workspace.innerHTML = steps.map((step) => renderStepCard(step, selection)).join('');
 
   workspace.querySelectorAll('[data-step-form]').forEach((form) => {
@@ -348,7 +328,7 @@ function renderWorkspace(selection) {
 
     deleteButton.addEventListener('click', async () => {
       try {
-        const artifact = getScopedArtifact(currentSnapshot, step, stepSelection);
+        const artifact = getArtifactForStep(currentSnapshot, step, stepSelection);
         const result = await deleteStepArtifact({
           projectId: currentSnapshot.project.project_id,
           artifactKey: artifact?.key,
@@ -377,7 +357,7 @@ function renderWorkspace(selection) {
       <section class="context-card">
         <p class="eyebrow">依赖检查</p>
         <h3>${escapeHtml(PAGE.steps.map((step) => getStepLabel(step)).join(' / '))}</h3>
-        ${renderDependencyList(PAGE.steps[0], dependencyMap, currentSnapshot, PAGE_KEY === 'outline' ? {} : PAGE_KEY === 'volume-outline' ? { volumeIndex: selection.volumeIndex } : selection)}
+        ${renderDependencyList(PAGE.steps[0], dependencyMap, currentSnapshot, PAGE_KEY === 'outline' ? {} : selectionForStep(PAGE.steps[0], selection))}
       </section>
 
       <section class="context-card">
@@ -423,8 +403,10 @@ async function loadPage() {
   currentSnapshot = snapshot;
   currentTasks = tasks;
 
-  const selection = getPageSelection(snapshot);
-  setQuerySelection(selection);
+  const selection = clampScopeSelection(snapshot, readScopeSelectionFromUrl(), {
+    getChapterCountForVolume: extractChapterCount,
+  });
+  syncScopeSelectionToUrl(selection);
   renderProjectMini(snapshot, selection);
   renderSelection(snapshot, selection);
   renderWorkspace(selection);

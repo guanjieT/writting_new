@@ -54,7 +54,6 @@ uvicorn novel_agent.main:app --reload --host 127.0.0.1 --port 8001
 | `NOVEL_AGENT_DATA_DIR` | 数据目录 | `./data` |
 | `NOVEL_AGENT_PROMPTS_DIR` | prompt 目录 | `./prompts` |
 | `NOVEL_AGENT_PROJECTS_DIR` | 项目 JSON 目录 | `./data/projects` |
-| `NOVEL_AGENT_TASKS_DIR` | 任务目录 | `./data/tasks` |
 | `NOVEL_AGENT_AUDIT_LOG` | 审计日志 JSONL | `./data/audit/events.jsonl` |
 | `NOVEL_AGENT_NAME` | 应用名称 | `Novel Agent Clean` |
 | `NOVEL_AGENT_HOST` | 启动监听地址 | `127.0.0.1` |

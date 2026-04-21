@@ -2,6 +2,7 @@ import { api } from './api-client.js';
 import { waitForTask } from './api-client.js';
 import { badge, escapeHtml, formatDate, renderJsonPreview, truncate } from './dom.js';
 import { extractChapterPlanDefaults, extractVolumeOutlineDefaults, getArtifact, getArtifactForStep, getScopedArtifact, getStepDependencies, getStepMeta, getStepLabel, getStepScopeKind, getStepStatus, serializeStepPayload } from './app-config.js';
+import { dependencySelectionFor, normalizeScopeSelection } from './scope-utils.js';
 
 export function renderField(field, value) {
   const safeValue = value ?? '';
@@ -352,25 +353,7 @@ export function renderDependencyList(step, dependencyMap, snapshot, selection = 
 }
 
 function normalizeSubmittedSelection(selection = {}, payload = {}) {
-  return {
-    volumeIndex: Math.max(Number(payload.volume_index || payload.volumeIndex || selection.volumeIndex || selection.volume_index || 1) || 1, 1),
-    chapterIndex: Math.max(Number(payload.chapter_index || payload.chapterIndex || selection.chapterIndex || selection.chapter_index || 1) || 1, 1),
-  };
-}
-
-function dependencySelectionFor(step, dependency, selection = {}) {
-  if (!selection || (selection.volumeIndex === undefined && selection.volume_index === undefined && selection.chapterIndex === undefined && selection.chapter_index === undefined)) {
-    return {};
-  }
-  const normalized = normalizeSubmittedSelection(selection);
-  const dependencyScope = getStepScopeKind(dependency);
-  if (dependencyScope === 'volume') {
-    return { volumeIndex: normalized.volumeIndex };
-  }
-  if (dependencyScope === 'chapter') {
-    return { volumeIndex: normalized.volumeIndex, chapterIndex: normalized.chapterIndex };
-  }
-  return {};
+  return normalizeScopeSelection(selection, payload);
 }
 
 function buildBaseArtifactPayload(step, snapshot, selection = {}, payload = {}) {

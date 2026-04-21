@@ -51,7 +51,6 @@ class AppConfig:
     data_dir: Path
     prompts_dir: Path
     projects_dir: Path
-    tasks_dir: Path
     audit_log_path: Path
     app_name: str = "Novel Agent Clean"
     server_host: str = "127.0.0.1"
@@ -73,12 +72,10 @@ def load_config(base_dir: str | Path | None = None) -> AppConfig:
     data_dir = Path(os.getenv("NOVEL_AGENT_DATA_DIR", resolved_base_dir / "data")).resolve()
     prompts_dir = Path(os.getenv("NOVEL_AGENT_PROMPTS_DIR", resolved_base_dir / "prompts")).resolve()
     projects_dir = Path(_first_env("NOVEL_AGENT_PROJECTS_DIR", default=str(data_dir / "projects"))).resolve()
-    tasks_dir = Path(_first_env("NOVEL_AGENT_TASKS_DIR", default=str(data_dir / "tasks"))).resolve()
     audit_log_path = Path(_first_env("NOVEL_AGENT_AUDIT_LOG", "NOVEL_AUDIT_LOG_PATH", default=str(data_dir / "audit" / "events.jsonl"))).resolve()
 
     data_dir.mkdir(parents=True, exist_ok=True)
     projects_dir.mkdir(parents=True, exist_ok=True)
-    tasks_dir.mkdir(parents=True, exist_ok=True)
     audit_log_path.parent.mkdir(parents=True, exist_ok=True)
 
     return AppConfig(
@@ -86,7 +83,6 @@ def load_config(base_dir: str | Path | None = None) -> AppConfig:
         data_dir=data_dir,
         prompts_dir=prompts_dir,
         projects_dir=projects_dir,
-        tasks_dir=tasks_dir,
         audit_log_path=audit_log_path,
         app_name=os.getenv("NOVEL_AGENT_NAME", "Novel Agent Clean"),
         server_host=_first_env("NOVEL_AGENT_HOST", default="127.0.0.1"),

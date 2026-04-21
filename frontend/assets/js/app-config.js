@@ -1,5 +1,8 @@
 import { api } from './api-client.js';
 import { listFromText, textFromList } from './state.js';
+import { dependencySelectionFor, getStepScopeKind, hasExplicitScopeSelection, normalizeScopeSelection } from './scope-utils.js';
+
+export { getStepScopeKind };
 
 export const FALLBACK_WORKFLOW_STEPS = [
   { key: 'requirements', label: '需求分析', depends_on: [] },
@@ -292,43 +295,8 @@ export function getArtifact(snapshot, step) {
   return artifacts.length ? artifacts[artifacts.length - 1] : null;
 }
 
-const ARTIFACT_SCOPE_KIND = {
-  outline: 'project',
-  rough_volume_outline: 'project',
-  volume_outline: 'volume',
-  rough_chapter_plan: 'volume',
-  chapter_plan: 'chapter',
-  chapter: 'chapter',
-  revision: 'chapter',
-  consistency: 'chapter',
-  memory: 'chapter',
-};
-
-function normalizeScopeSelection(selection = {}) {
-  return {
-    volumeIndex: Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1),
-    chapterIndex: Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1),
-  };
-}
-
-export function getStepScopeKind(step) {
-  return ARTIFACT_SCOPE_KIND[step] || 'project';
-}
-
-function hasExplicitSelection(selection = {}) {
-  return Boolean(
-    selection
-    && (
-      selection.volumeIndex !== undefined
-      || selection.volume_index !== undefined
-      || selection.chapterIndex !== undefined
-      || selection.chapter_index !== undefined
-    )
-  );
-}
-
 export function getArtifactForStep(snapshot, step, selection = {}) {
-  if (hasExplicitSelection(selection)) {
+  if (hasExplicitScopeSelection(selection)) {
     return getScopedArtifact(snapshot, step, selection);
   }
   return getArtifact(snapshot, step);
@@ -355,21 +323,6 @@ export function getScopedArtifact(snapshot, step, selection = {}) {
     }
     return true;
   }) || null;
-}
-
-function dependencySelectionFor(step, dependency, selection = {}) {
-  if (!hasExplicitSelection(selection)) {
-    return {};
-  }
-  const normalized = normalizeScopeSelection(selection);
-  const dependencyScope = getStepScopeKind(dependency);
-  if (dependencyScope === 'volume') {
-    return { volumeIndex: normalized.volumeIndex };
-  }
-  if (dependencyScope === 'chapter') {
-    return { volumeIndex: normalized.volumeIndex, chapterIndex: normalized.chapterIndex };
-  }
-  return {};
 }
 
 function dependencyArtifactFor(step, dependency, snapshot, selection = {}) {

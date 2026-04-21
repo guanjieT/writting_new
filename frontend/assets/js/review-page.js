@@ -2,6 +2,7 @@ import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getArtifactForStep, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, truncate } from './dom.js';
 import { getPageProjectId, setSelectedProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
+import { clampScopeSelection, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
 
 const summary = document.getElementById('review-summary');
 const selectionPanel = document.getElementById('review-selection');
@@ -15,22 +16,7 @@ let workflowSteps = FALLBACK_WORKFLOW_STEPS;
 let dependencyMap = Object.fromEntries(FALLBACK_WORKFLOW_STEPS.map((step) => [step.key, step.depends_on || []]));
 let currentSnapshot = null;
 let currentTasks = [];
-let currentSelection = getReviewSelectionFromUrl();
-
-function getReviewSelectionFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    volumeIndex: Math.max(Number(params.get('volume_index') || '1') || 1, 1),
-    chapterIndex: Math.max(Number(params.get('chapter_index') || '1') || 1, 1),
-  };
-}
-
-function syncReviewSelectionToUrl(selection) {
-  const url = new URL(window.location.href);
-  url.searchParams.set('volume_index', String(selection.volumeIndex || 1));
-  url.searchParams.set('chapter_index', String(selection.chapterIndex || 1));
-  window.history.replaceState({}, '', url);
-}
+let currentSelection = readScopeSelectionFromUrl();
 
 function buildStepUrl(step, projectId) {
   const meta = getStepMeta(step);
@@ -49,17 +35,8 @@ function buildStepUrl(step, projectId) {
   return `${url.pathname}${url.search}`;
 }
 
-function clampReviewSelection(snapshot, selection = {}) {
-  const volumeCount = Math.max(Number(snapshot?.project?.input?.target_volume_count || 1), 1);
-  const chapterCount = Math.max(Number(snapshot?.project?.input?.target_chapters_per_volume || 1), 1);
-  return {
-    volumeIndex: Math.min(Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1), volumeCount),
-    chapterIndex: Math.min(Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1), chapterCount),
-  };
-}
-
-function selectionForStep(step) {
-  return getStepScopeKind(step) === 'project' ? {} : currentSelection;
+function selectionForCurrentStep(step) {
+  return selectionForStep(step, currentSelection);
 }
 
 function renderSelection(snapshot) {
@@ -97,11 +74,11 @@ function renderSelection(snapshot) {
 
   selectionPanel.querySelectorAll('[data-review-volume-index], [data-review-chapter-index]').forEach((control) => {
     control.addEventListener('change', () => {
-      currentSelection = clampReviewSelection(currentSnapshot, {
+      currentSelection = clampScopeSelection(currentSnapshot, {
         volumeIndex: Number(selectionPanel.querySelector('[data-review-volume-index]')?.value || currentSelection.volumeIndex || 1) || 1,
         chapterIndex: Number(selectionPanel.querySelector('[data-review-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
       });
-      syncReviewSelectionToUrl(currentSelection);
+      syncScopeSelectionToUrl(currentSelection);
       renderPage();
     });
   });
@@ -120,7 +97,7 @@ function buildIssueQueue(snapshot, tasks) {
   const issues = [];
   for (const stepDef of workflowSteps) {
     const step = stepDef.key;
-    const selection = selectionForStep(step);
+    const selection = selectionForCurrentStep(step);
     const artifact = getArtifactForStep(snapshot, step, selection);
     const latestTask = [...tasks].filter((task) => task.task_name === step).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
@@ -136,7 +113,7 @@ function buildIssueQueue(snapshot, tasks) {
       continue;
     }
 
-    if (!artifact && isUnlocked(step, snapshot, dependencyMap)) {
+    if (!artifact && isUnlocked(step, snapshot, dependencyMap, selection)) {
       issues.push({
         severity: step === 'chapter' ? '高' : '中',
         tone: step === 'chapter' ? 'danger' : 'warn',
@@ -148,7 +125,8 @@ function buildIssueQueue(snapshot, tasks) {
     }
   }
 
-  if (getArtifactForStep(snapshot, 'chapter', currentSelection) && !getArtifactForStep(snapshot, 'consistency', currentSelection)) {
+  const chapterSelection = selectionForCurrentStep('chapter');
+  if (getArtifactForStep(snapshot, 'chapter', chapterSelection) && !getArtifactForStep(snapshot, 'consistency', chapterSelection)) {
     issues.push({
       severity: '中',
       tone: 'warn',
@@ -159,7 +137,7 @@ function buildIssueQueue(snapshot, tasks) {
     });
   }
 
-  if (getArtifactForStep(snapshot, 'chapter', currentSelection) && !getArtifactForStep(snapshot, 'revision', currentSelection)) {
+  if (getArtifactForStep(snapshot, 'chapter', chapterSelection) && !getArtifactForStep(snapshot, 'revision', chapterSelection)) {
     issues.push({
       severity: '中',
       tone: 'warn',
@@ -265,7 +243,7 @@ function renderMatrix(snapshot, projectId) {
       </div>
       <div class="review-group-grid">
         ${group.steps.map((step) => {
-          const selection = selectionForStep(step);
+          const selection = selectionForCurrentStep(step);
           const status = getStepStatus(step, snapshot, dependencyMap, currentTasks, selection);
           const artifact = getArtifactForStep(snapshot, step, selection);
           const deps = getStepDependencies(step, dependencyMap);
@@ -351,8 +329,8 @@ async function loadPage() {
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;
-  currentSelection = clampReviewSelection(snapshot, getReviewSelectionFromUrl());
-  syncReviewSelectionToUrl(currentSelection);
+  currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl());
+  syncScopeSelectionToUrl(currentSelection);
 
   renderPage();
 }

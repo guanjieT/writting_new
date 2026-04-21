@@ -3,6 +3,7 @@ import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getArtifactForStep, getField
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, summarizeList, truncate } from './dom.js';
 import { getPageProjectId, getPreferredStep, setPreferredStep, setSelectedProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderChecklist, renderDependencyList, renderStageOverview, renderTaskList, renderField, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
+import { clampScopeSelection, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
 
 const projectMini = document.getElementById('workflow-project-mini');
 const stageGroups = document.getElementById('workflow-stage-groups');
@@ -21,39 +22,11 @@ let dependencyMap = Object.fromEntries(FALLBACK_WORKFLOW_STEPS.map((step) => [st
 let currentSnapshot = null;
 let currentTasks = [];
 let currentStep = '';
-let currentSelection = getWorkflowSelectionFromUrl();
-
-function getWorkflowSelectionFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    volumeIndex: Math.max(Number(params.get('volume_index') || '1') || 1, 1),
-    chapterIndex: Math.max(Number(params.get('chapter_index') || '1') || 1, 1),
-  };
-}
-
-function syncWorkflowSelectionToUrl(selection) {
-  const url = new URL(window.location.href);
-  url.searchParams.set('volume_index', String(selection.volumeIndex || 1));
-  url.searchParams.set('chapter_index', String(selection.chapterIndex || 1));
-  window.history.replaceState({}, '', url);
-}
-
-function clampWorkflowSelection(snapshot, selection = {}) {
-  const volumeCount = Math.max(Number(snapshot?.project?.input?.target_volume_count || 1), 1);
-  const chapterCount = Math.max(Number(snapshot?.project?.input?.target_chapters_per_volume || 1), 1);
-  return {
-    volumeIndex: Math.min(Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1), volumeCount),
-    chapterIndex: Math.min(Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1), chapterCount),
-  };
-}
-
-function selectionForStep(step) {
-  return getStepScopeKind(step) === 'project' ? {} : currentSelection;
-}
+let currentSelection = readScopeSelectionFromUrl();
 
 function updateWorkflowSelection(nextSelection) {
-  currentSelection = clampWorkflowSelection(currentSnapshot, nextSelection);
-  syncWorkflowSelectionToUrl(currentSelection);
+  currentSelection = clampScopeSelection(currentSnapshot, nextSelection);
+  syncScopeSelectionToUrl(currentSelection);
   renderPage();
 }
 
@@ -65,7 +38,7 @@ function renderSelectionCard(snapshot) {
   const project = snapshot.project;
   const volumeOptions = Array.from({ length: Math.max(Number(project.input.target_volume_count || 1), 1) }, (_, index) => index + 1);
   const chapterOptions = Array.from({ length: Math.max(Number(project.input.target_chapters_per_volume || 1), 1) }, (_, index) => index + 1);
-  const scopedArtifact = getArtifactForStep(snapshot, currentStep, currentSelection);
+  const scopedArtifact = getArtifactForStep(snapshot, currentStep, selectionForStep(currentStep, currentSelection));
   const stepScopeKind = getStepScopeKind(currentStep);
   const scopedLabel = stepScopeKind === 'volume' ? '当前卷有对应产物' : stepScopeKind === 'chapter' ? '当前章节有对应产物' : '当前对象有对应产物';
   const scopeHint = stepScopeKind === 'volume' ? '当前步骤会按这个卷读写与删除。' : stepScopeKind === 'chapter' ? '当前步骤会按这个章节读写与删除。' : '切换到卷级或章节步骤后，会沿用这个上下文。';
@@ -155,7 +128,7 @@ function renderStageNav() {
       </div>
       <div class="nav-list">
         ${group.steps.map((step) => {
-          const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks, selectionForStep(step));
+          const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks, selectionForStep(step, currentSelection));
           return `
             <button type="button" class="nav-item ${step === currentStep ? 'active' : ''}" data-select-step="${step}">
               <div>
@@ -192,7 +165,7 @@ function buildStepForm(step, selection) {
   const primaryFields = fields.filter((field) => !field.advanced).map((field) => ({ ...field, stepKey: step }));
   const advancedFields = fields.filter((field) => field.advanced).map((field) => ({ ...field, stepKey: step }));
   const scopeKind = getStepScopeKind(step);
-  const scopedArtifact = getArtifactForStep(currentSnapshot, step, selection);
+  const scopedArtifact = getArtifactForStep(currentSnapshot, step, selectionForStep(step, selection));
 
   return `
     <form class="workspace-form" data-step-form="${step}">
@@ -228,7 +201,7 @@ function renderWorkspace() {
   }
   const step = currentStep;
   const meta = getStepMeta(step);
-  const stepSelection = selectionForStep(step);
+  const stepSelection = selectionForStep(step, currentSelection);
   const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks, stepSelection);
   workspaceTitle.textContent = `${meta.label} · ${meta.objectName}`;
   overview.innerHTML = renderStageOverview(VISIBLE_STEPS, currentSnapshot, dependencyMap, currentTasks, currentSelection);
@@ -362,7 +335,7 @@ function renderInspector() {
 
   const project = currentSnapshot.project;
   const stepTasks = currentTasks.filter((task) => task.task_name === currentStep);
-  const stepSelection = selectionForStep(currentStep);
+  const stepSelection = selectionForStep(currentStep, currentSelection);
   inspector.innerHTML = `
     <div class="stack-list">
       <section class="context-card">
@@ -378,7 +351,7 @@ function renderInspector() {
       <section class="context-card">
         <p class="eyebrow">依赖检查</p>
         <h3>${escapeHtml(getStepLabel(currentStep, workflowSteps))}</h3>
-        ${renderDependencyList(currentStep, dependencyMap, currentSnapshot, currentSelection)}
+        ${renderDependencyList(currentStep, dependencyMap, currentSnapshot, stepSelection)}
       </section>
 
       <section class="context-card">
@@ -429,8 +402,8 @@ async function loadPage() {
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;
-  currentSelection = clampWorkflowSelection(snapshot, getWorkflowSelectionFromUrl());
-  syncWorkflowSelectionToUrl(currentSelection);
+  currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl());
+  syncScopeSelectionToUrl(currentSelection);
   setSelectedProjectId(projectId);
 
   currentStep = VISIBLE_STEPS.includes(currentStep) ? currentStep : chooseDefaultStep();

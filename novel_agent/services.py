@@ -116,23 +116,6 @@ def _project_step_from_artifacts(artifacts: dict[str, Artifact]) -> WorkflowStep
     return WorkflowStep.CREATED
 
 
-def _dependent_step_keys(step_key: str) -> list[str]:
-    removed: list[str] = []
-    stack = list(WORKFLOW_CHILDREN.get(step_key, set()))
-    seen: set[str] = set()
-
-    while stack:
-        current = stack.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        removed.append(current)
-        stack.extend(WORKFLOW_CHILDREN.get(current, set()))
-
-    removed.sort(key=lambda key: WORKFLOW_ORDER.index(key) if key in WORKFLOW_ORDER else len(WORKFLOW_ORDER))
-    return removed
-
-
 @dataclass(frozen=True)
 class PromptService:
     store: PromptStore
