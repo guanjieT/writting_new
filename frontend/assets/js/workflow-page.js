@@ -1,8 +1,8 @@
 import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
-import { getArtifactForStep, getStepStatus, isUnlocked } from './artifact-selectors.js';
-import { getFieldDisplayValue } from './planning-defaults.js';
-import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, summarizeList, truncate } from './dom.js';
+import { getArtifactForStep, getStepStatus, getTasksForStepSelection, isUnlocked } from './artifact-selectors.js';
+import { getFieldDisplayValue, inferChapterCountForVolume } from './planning-defaults.js';
+import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, getPreferredStep, setPreferredStep, setSelectedProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderChecklist, renderDependencyList, renderStageOverview, renderTaskList, renderField, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
 import { clampScopeSelection, getStepScopeKind, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
@@ -27,7 +27,9 @@ let currentStep = '';
 let currentSelection = readScopeSelectionFromUrl();
 
 function updateWorkflowSelection(nextSelection) {
-  currentSelection = clampScopeSelection(currentSnapshot, nextSelection);
+  currentSelection = clampScopeSelection(currentSnapshot, nextSelection, {
+    getChapterCountForVolume: inferChapterCountForVolume,
+  });
   syncScopeSelectionToUrl(currentSelection);
   renderPage();
 }
@@ -39,7 +41,8 @@ function renderSelectionCard(snapshot) {
 
   const project = snapshot.project;
   const volumeOptions = Array.from({ length: Math.max(Number(project.input.target_volume_count || 1), 1) }, (_, index) => index + 1);
-  const chapterOptions = Array.from({ length: Math.max(Number(project.input.target_chapters_per_volume || 1), 1) }, (_, index) => index + 1);
+  const chapterCount = Math.max(Number(inferChapterCountForVolume(snapshot, currentSelection.volumeIndex)), 1);
+  const chapterOptions = Array.from({ length: chapterCount }, (_, index) => index + 1);
   const scopedArtifact = getArtifactForStep(snapshot, currentStep, selectionForStep(currentStep, currentSelection));
   const stepScopeKind = getStepScopeKind(currentStep);
   const scopedLabel = stepScopeKind === 'volume' ? '当前卷有对应产物' : stepScopeKind === 'chapter' ? '当前章节有对应产物' : '当前对象有对应产物';
@@ -83,7 +86,7 @@ function chooseDefaultStep() {
   if (preferred && VISIBLE_STEPS.includes(preferred)) {
     return preferred;
   }
-  const unlocked = VISIBLE_STEPS.find((step) => isUnlocked(step, currentSnapshot, dependencyMap));
+  const unlocked = VISIBLE_STEPS.find((step) => isUnlocked(step, currentSnapshot, dependencyMap, selectionForStep(step, currentSelection)));
   return unlocked || VISIBLE_STEPS[0];
 }
 
@@ -336,8 +339,8 @@ function renderInspector() {
   }
 
   const project = currentSnapshot.project;
-  const stepTasks = currentTasks.filter((task) => task.task_name === currentStep);
   const stepSelection = selectionForStep(currentStep, currentSelection);
+  const stepTasks = getTasksForStepSelection(currentStep, currentTasks, stepSelection);
   inspector.innerHTML = `
     <div class="stack-list">
       <section class="context-card">
@@ -404,7 +407,9 @@ async function loadPage() {
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;
-  currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl());
+  currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl(), {
+    getChapterCountForVolume: inferChapterCountForVolume,
+  });
   syncScopeSelectionToUrl(currentSelection);
   setSelectedProjectId(projectId);
 

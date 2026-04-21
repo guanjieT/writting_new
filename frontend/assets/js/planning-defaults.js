@@ -1,5 +1,11 @@
+import { getScopedArtifact } from './artifact-selectors.js';
 import { textFromList } from './state.js';
-import { extractChapterPlanDefaults, extractVolumeOutlineDefaults } from './structured-parsers.js';
+import {
+  getGeneratedStructuredPayload,
+  getRoughChapterPlanChapterCount,
+  parseRoughChapterPlanChapters,
+  parseRoughVolumeOutlineVolumes,
+} from './structured-parsers.js';
 
 const PROJECT_NOTE_SOURCES = {
   requirements: ['core_requirements', 'forbidden_elements'],
@@ -23,13 +29,95 @@ function collectProjectListValues(projectInput, keys) {
     .filter(Boolean);
 }
 
+function positiveNumber(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
+function extractVolumeOutlineChapterCount(snapshot, volumeIndex = 1) {
+  const artifact = getScopedArtifact(snapshot, 'volume_outline', { volumeIndex });
+  const structured = getGeneratedStructuredPayload(artifact);
+  return positiveNumber(structured?.target_chapter_count);
+}
+
+export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
+  const sections = parseRoughVolumeOutlineVolumes(snapshot);
+  if (!sections.length) {
+    return null;
+  }
+
+  const safeIndex = Math.max(Number(volumeIndex) || 1, 1);
+  const selected = sections.find((section) => section.index === safeIndex) || sections[0];
+  if (!selected) {
+    return null;
+  }
+
+  const chapterCountFromBriefs = selected.chapter_briefs.reduce((maxValue, brief) => {
+    const match = brief.match(/(\d+)(?:\s*[-~—]\s*(\d+))?\s*章/);
+    if (!match) {
+      return maxValue;
+    }
+    const endValue = Number(match[2] || match[1]) || 0;
+    return Math.max(maxValue, endValue);
+  }, 0);
+
+  const summaryParts = [selected.goal, selected.conflict, selected.hook].filter(Boolean);
+  return {
+    volume_title: selected.title || '',
+    volume_summary: summaryParts.join('；'),
+    volume_goal: selected.goal || '',
+    volume_conflict: selected.conflict || '',
+    volume_hook: selected.hook || '',
+    chapter_briefs: selected.chapter_briefs,
+    target_chapter_count: selected.target_chapter_count || chapterCountFromBriefs || selected.chapter_briefs.length || 0,
+  };
+}
+
+export function extractChapterPlanDefaults(snapshot, volumeIndex = 1, chapterIndex = 1) {
+  const chapters = parseRoughChapterPlanChapters(snapshot, volumeIndex);
+  if (!chapters.length) {
+    return null;
+  }
+
+  const safeIndex = Math.max(Number(chapterIndex) || 1, 1);
+  const selected = chapters.find((chapter) => chapter.index === safeIndex) || chapters[0];
+  if (!selected) {
+    return null;
+  }
+
+  return {
+    volume_index: Math.max(Number(volumeIndex) || 1, 1),
+    chapter_index: selected.index,
+    chapter_title: selected.title || '',
+    chapter_summary: selected.summary || '',
+    chapter_type: selected.chapter_type || '主线推进章',
+    pov_character: selected.pov_character || '',
+    conflict: selected.conflict || '',
+    hook: selected.hook || '',
+    scene_summaries: selected.scene_summaries,
+    main_event: selected.main_event || '',
+    target_words: selected.target_words || 0,
+  };
+}
+
+export function inferChapterCountForVolume(snapshot, volumeIndex = 1) {
+  return getRoughChapterPlanChapterCount(snapshot, volumeIndex)
+    || extractVolumeOutlineChapterCount(snapshot, volumeIndex)
+    || extractVolumeOutlineDefaults(snapshot, volumeIndex)?.target_chapter_count
+    || snapshot?.project?.input?.target_chapters_per_volume
+    || 12;
+}
+
 function renderInputValue(field, project, snapshot, selection = {}) {
   const projectInput = project?.input || {};
+  const volumeIndex = Number(selection.volumeIndex || selection.volume_index || 1) || 1;
+  const chapterIndex = Number(selection.chapterIndex || selection.chapter_index || 1) || 1;
+
   if (field.key === 'volume_index') {
-    return Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1);
+    return Math.max(volumeIndex, 1);
   }
   if (field.key === 'chapter_index') {
-    return Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1);
+    return Math.max(chapterIndex, 1);
   }
   if (field.key === 'requirements_text') {
     return projectInput.premise || '';
@@ -41,7 +129,7 @@ function renderInputValue(field, project, snapshot, selection = {}) {
     return projectInput.target_volume_count || 1;
   }
   if (field.stepKey === 'volume_outline') {
-    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1);
+    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, volumeIndex);
     if (outlineDefaults) {
       if (field.key === 'volume_title') {
         return outlineDefaults.volume_title || '';
@@ -67,11 +155,13 @@ function renderInputValue(field, project, snapshot, selection = {}) {
     }
   }
   if (field.stepKey === 'rough_chapter_plan' && field.key === 'target_chapter_count') {
-    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1);
-    return outlineDefaults?.target_chapter_count || projectInput.target_chapters_per_volume || 12;
+    return extractVolumeOutlineChapterCount(snapshot, volumeIndex)
+      || extractVolumeOutlineDefaults(snapshot, volumeIndex)?.target_chapter_count
+      || projectInput.target_chapters_per_volume
+      || 12;
   }
   if (field.stepKey === 'chapter_plan') {
-    const chapterDefaults = extractChapterPlanDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1, Number(selection.chapterIndex || selection.chapter_index || 1) || 1);
+    const chapterDefaults = extractChapterPlanDefaults(snapshot, volumeIndex, chapterIndex);
     if (chapterDefaults) {
       if (field.key === 'chapter_title') {
         return chapterDefaults.chapter_title || '';
@@ -97,12 +187,11 @@ function renderInputValue(field, project, snapshot, selection = {}) {
     }
   }
   if (field.key === 'chapters_per_volume' || field.key === 'target_chapter_count') {
-    const outlineDefaults = extractVolumeOutlineDefaults(snapshot, Number(selection.volumeIndex || selection.volume_index || 1) || 1);
-    return outlineDefaults?.target_chapter_count || projectInput.target_chapters_per_volume || 12;
+    return inferChapterCountForVolume(snapshot, volumeIndex);
   }
   if (field.key === 'target_words') {
     const volumeCount = Math.max(projectInput.target_volume_count || 1, 1);
-    const chaptersPerVolume = Math.max(projectInput.target_chapters_per_volume || 1, 1);
+    const chaptersPerVolume = Math.max(inferChapterCountForVolume(snapshot, volumeIndex) || 1, 1);
     if (['chapter', 'chapter_plan'].includes(field.stepKey)) {
       return Math.max(Math.floor((projectInput.target_words || 0) / (volumeCount * chaptersPerVolume)), 2000);
     }
@@ -133,5 +222,3 @@ export function getFieldDisplayValue(field, project, snapshot, selection = {}) {
   const value = renderInputValue(enhancedField, project, snapshot, selection);
   return field.list ? textFromList(value) : value;
 }
-
-export { renderInputValue, extractVolumeOutlineDefaults, extractChapterPlanDefaults };

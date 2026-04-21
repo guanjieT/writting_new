@@ -1,10 +1,9 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
-import { getArtifactForStep, getStepStatus, isUnlocked } from './artifact-selectors.js';
-import { getFieldDisplayValue } from './planning-defaults.js';
-import { extractRoughChapterPlanChapterCount, extractVolumeOutlineDefaults } from './structured-parsers.js';
-import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
-import { getPageProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
+import { FALLBACK_WORKFLOW_STEPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
+import { getArtifactForStep, getStepStatus, getTasksForSelection, isUnlocked } from './artifact-selectors.js';
+import { getFieldDisplayValue, inferChapterCountForVolume } from './planning-defaults.js';
+import { badge, escapeHtml, renderEmpty, renderNotice, summarizeList } from './dom.js';
+import { getPageProjectId, syncProjectId, syncTopNavLinks } from './state.js';
 import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderDependencyList, renderField, renderStageOverview, renderTaskList, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
 import { clampScopeSelection, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
 
@@ -40,7 +39,6 @@ const reloadButton = document.getElementById('reload-structure');
 const pageTitle = document.getElementById('structure-workspace-title');
 const pageSubtitle = document.getElementById('structure-workspace-subtitle');
 
-let workflowSteps = FALLBACK_WORKFLOW_STEPS;
 let dependencyMap = Object.fromEntries(FALLBACK_WORKFLOW_STEPS.map((step) => [step.key, step.depends_on || []]));
 let currentSnapshot = null;
 let currentTasks = [];
@@ -69,10 +67,7 @@ function getSelectedChapterCount(snapshot, volumeIndex) {
 }
 
 function extractChapterCount(snapshot, volumeIndex) {
-  return extractRoughChapterPlanChapterCount(snapshot, volumeIndex)
-    || extractVolumeOutlineDefaults(snapshot, volumeIndex)?.target_chapter_count
-    || snapshot?.project?.input?.target_chapters_per_volume
-    || 12;
+  return inferChapterCountForVolume(snapshot, volumeIndex);
 }
 
 function renderProjectMini(snapshot, selection) {
@@ -366,7 +361,7 @@ function renderWorkspace(selection) {
       <section class="context-card">
         <p class="eyebrow">最近任务</p>
         <h3>结构执行记录</h3>
-        ${renderTaskList(currentTasks.filter((task) => PAGE.steps.includes(task.task_name)), { limit: 6 })}
+        ${renderTaskList(getTasksForSelection(currentTasks, PAGE.steps, PAGE_KEY === 'outline' ? {} : selection), { limit: 6 })}
       </section>
 
       <section class="context-card subtle">
@@ -401,7 +396,6 @@ async function loadPage() {
     api.listTasks(projectId),
   ]);
 
-  workflowSteps = context.steps || FALLBACK_WORKFLOW_STEPS;
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;

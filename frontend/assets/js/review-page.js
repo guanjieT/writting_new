@@ -1,6 +1,7 @@
 import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getStepDependencies, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
-import { findLatestTaskForStep, getArtifactForStep, getStepStatus, isUnlocked } from './artifact-selectors.js';
+import { findLatestTaskForStep, getArtifactForStep, getStepStatus, getTasksForSelection, isUnlocked } from './artifact-selectors.js';
+import { inferChapterCountForVolume } from './planning-defaults.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, truncate } from './dom.js';
 import { getPageProjectId, setSelectedProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { clampScopeSelection, getStepScopeKind, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
@@ -40,6 +41,10 @@ function selectionForCurrentStep(step) {
   return selectionForStep(step, currentSelection);
 }
 
+function workflowStepKeys() {
+  return workflowSteps.map((step) => (typeof step === 'string' ? step : step?.key)).filter(Boolean);
+}
+
 function renderSelection(snapshot) {
   if (!snapshot) {
     return;
@@ -47,7 +52,7 @@ function renderSelection(snapshot) {
 
   const project = snapshot.project;
   const volumeCount = Math.max(Number(project.input.target_volume_count || 1), 1);
-  const chapterCount = Math.max(Number(project.input.target_chapters_per_volume || 1), 1);
+  const chapterCount = Math.max(Number(inferChapterCountForVolume(snapshot, currentSelection.volumeIndex)), 1);
   const volumeOptions = Array.from({ length: volumeCount }, (_, index) => index + 1);
   const chapterOptions = Array.from({ length: chapterCount }, (_, index) => index + 1);
 
@@ -75,10 +80,14 @@ function renderSelection(snapshot) {
 
   selectionPanel.querySelectorAll('[data-review-volume-index], [data-review-chapter-index]').forEach((control) => {
     control.addEventListener('change', () => {
-      currentSelection = clampScopeSelection(currentSnapshot, {
-        volumeIndex: Number(selectionPanel.querySelector('[data-review-volume-index]')?.value || currentSelection.volumeIndex || 1) || 1,
-        chapterIndex: Number(selectionPanel.querySelector('[data-review-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
-      });
+      currentSelection = clampScopeSelection(
+        currentSnapshot,
+        {
+          volumeIndex: Number(selectionPanel.querySelector('[data-review-volume-index]')?.value || currentSelection.volumeIndex || 1) || 1,
+          chapterIndex: Number(selectionPanel.querySelector('[data-review-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
+        },
+        { getChapterCountForVolume: inferChapterCountForVolume },
+      );
       syncScopeSelectionToUrl(currentSelection);
       renderPage();
     });
@@ -86,9 +95,10 @@ function renderSelection(snapshot) {
 }
 
 function renderPage() {
+  const issueItems = buildIssueQueue(currentSnapshot, currentTasks);
   renderSummary(currentSnapshot, currentTasks);
-  renderQueueItems(buildIssueQueue(currentSnapshot, currentTasks), currentSnapshot.project.project_id);
-  renderActionsPanel(buildIssueQueue(currentSnapshot, currentTasks), currentSnapshot.project.project_id);
+  renderQueueItems(issueItems, currentSnapshot.project.project_id);
+  renderActionsPanel(issueItems, currentSnapshot.project.project_id);
   renderMatrix(currentSnapshot, currentSnapshot.project.project_id);
   renderTasks(currentTasks);
   renderSelection(currentSnapshot);
@@ -97,7 +107,10 @@ function renderPage() {
 function buildIssueQueue(snapshot, tasks) {
   const issues = [];
   for (const stepDef of workflowSteps) {
-    const step = stepDef.key;
+    const step = typeof stepDef === 'string' ? stepDef : stepDef.key;
+    if (!step) {
+      continue;
+    }
     const selection = selectionForCurrentStep(step);
     const artifact = getArtifactForStep(snapshot, step, selection);
     const latestTask = findLatestTaskForStep(step, tasks, selection);
@@ -108,7 +121,6 @@ function buildIssueQueue(snapshot, tasks) {
         tone: 'danger',
         title: `${getStepLabel(step, workflowSteps)}执行失败`,
         detail: latestTask.error || '最近一次执行失败，需要先处理这个错误。',
-        page: getStepMeta(step).page,
         step,
       });
       continue;
@@ -120,7 +132,6 @@ function buildIssueQueue(snapshot, tasks) {
         tone: step === 'chapter' ? 'danger' : 'warn',
         title: `${getStepLabel(step, workflowSteps)}待处理`,
         detail: `前置依赖已经齐了，但这个对象还没有产物。`,
-        page: getStepMeta(step).page,
         step,
       });
     }
@@ -133,7 +144,6 @@ function buildIssueQueue(snapshot, tasks) {
       tone: 'warn',
       title: '正文已出，但一致性检查缺失',
       detail: '角色、设定和正文之间还没有交叉检查结果。',
-      page: 'workflow',
       step: 'consistency',
     });
   }
@@ -144,7 +154,6 @@ function buildIssueQueue(snapshot, tasks) {
       tone: 'warn',
       title: '正文已出，但缺少修订版本',
       detail: '建议至少做一轮节奏、文风或信息密度修订。',
-      page: 'workflow',
       step: 'revision',
     });
   }
@@ -154,20 +163,27 @@ function buildIssueQueue(snapshot, tasks) {
 
 function renderSummary(snapshot, tasks) {
   const project = snapshot.project;
+  const stepKeys = workflowStepKeys();
   const artifactCount = Object.keys(snapshot.artifacts || {}).length;
-  const visibleArtifactCount = workflowSteps.filter((step) => Boolean(getArtifactForStep(snapshot, step, selectionForCurrentStep(step)))).length;
-  const failedTasks = tasks.filter((task) => task.status === 'failed').length;
-  const pendingTasks = tasks.filter((task) => task.status === 'pending' || task.status === 'running').length;
-  const missingContextCount = workflowSteps.filter((step) => !getArtifactForStep(snapshot, step, selectionForCurrentStep(step))).length;
+  const visibleArtifactCount = stepKeys.filter((step) => Boolean(getArtifactForStep(snapshot, step, selectionForCurrentStep(step)))).length;
+  const scopedTasks = getTasksForSelection(tasks, workflowSteps, currentSelection);
+  const failedTasks = scopedTasks.filter((task) => task.status === 'failed').length;
+  const pendingTasks = scopedTasks.filter((task) => task.status === 'pending' || task.status === 'running').length;
+  const missingContextCount = stepKeys.filter((step) => !getArtifactForStep(snapshot, step, selectionForCurrentStep(step))).length;
+  const pendingContextSteps = stepKeys.filter((step) => {
+    const selection = selectionForCurrentStep(step);
+    return !getArtifactForStep(snapshot, step, selection) && isUnlocked(step, snapshot, dependencyMap, selection);
+  }).length;
 
   summary.innerHTML = `
     <div class="stats-grid">
       <article class="stat-card"><div class="stat-number">${escapeHtml(workflowSteps.length)}</div><div class="muted">唯一步骤总数</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(artifactCount)}</div><div class="muted">实际 artifact 总数</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(visibleArtifactCount)}</div><div class="muted">当前上下文已产出</div></article>
-      <article class="stat-card"><div class="stat-number">${escapeHtml(failedTasks)}</div><div class="muted">失败任务</div></article>
-      <article class="stat-card"><div class="stat-number">${escapeHtml(pendingTasks)}</div><div class="muted">执行中任务</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(missingContextCount)}</div><div class="muted">当前上下文缺失对象数</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(pendingContextSteps)}</div><div class="muted">当前 selection 待处理步骤</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(failedTasks)}</div><div class="muted">当前上下文失败任务</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(pendingTasks)}</div><div class="muted">当前上下文执行中任务</div></article>
     </div>
     <div class="context-card">
       <div class="context-head">
@@ -291,11 +307,12 @@ function renderMatrix(snapshot, projectId) {
 }
 
 function renderTasks(tasks) {
-  if (!tasks.length) {
-    renderEmpty(taskList, '当前项目还没有任务记录。');
+  const scopedTasks = getTasksForSelection(tasks, workflowSteps, currentSelection);
+  if (!scopedTasks.length) {
+    renderEmpty(taskList, '当前上下文还没有任务记录。');
     return;
   }
-  const recent = [...tasks].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 12);
+  const recent = [...scopedTasks].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 12);
   taskList.innerHTML = recent.map((task) => `
     <article class="task-card">
       <div class="task-card-head">
@@ -335,7 +352,9 @@ async function loadPage() {
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;
-  currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl());
+  currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl(), {
+    getChapterCountForVolume: inferChapterCountForVolume,
+  });
   syncScopeSelectionToUrl(currentSelection);
 
   renderPage();

@@ -14,8 +14,8 @@
     "core_requirements": [],
     "forbidden_elements": []
   },
-  "current_step": "volume_outline",
-  "status": "volume_outline",
+  "current_step": "chapter_plan",
+  "status": "chapter_plan",
   "artifacts": {
     "requirements": {
       "key": "requirements",
@@ -676,8 +676,633 @@
           }
         }
       }
+    },
+    "rough_chapter_plan:1": {
+      "key": "rough_chapter_plan:1",
+      "title": "粗章纲",
+      "content": "以太异常现象初现，阿德琳能力觉醒引发三方混战。",
+      "summary": {
+        "summary": "这是一个关于资源枯竭世界中种族冲突与生存斗争的史诗级奇幻故事。以太作为魔法能量源正在消失，引发三大种族（人类、晶裔、虚空族）的激烈争夺。主角阿德琳·霜刃拥有罕见的以太虹吸能力，成为各方争夺的焦点。与此同时，晶裔领袖卡里昂·黑曜的晶化病不断恶化，迫使他采取极端手段。故事将展现种族联盟的脆弱性、个人抉择的代价，以及在绝境中揭示的惊人真相。",
+        "overview": "这是一个关于资源枯竭世界中种族冲突与生存斗争的史诗级奇幻故事。以太作为魔法能量源正在消失，引发三大种族（人类、晶裔、虚空族）的激烈争夺。主角阿德琳·霜刃拥有罕见的以太虹吸能力，成为各方争夺的焦点。与此同时，晶裔领袖卡里昂·黑曜的晶化病不断恶化，迫使他采取极端手段。故事将展现种族联盟的脆弱性、个人抉择的代价，以及在绝境中揭示的惊人真相。",
+        "key_facts": [
+          "以太转化率每卷下降12%，表现方式各不相同",
+          "每卷至少1次重大阵营转换",
+          "阿德琳的虹吸能力每两卷解锁1个新应用维度",
+          "卡里昂的晶化病按精确公式恶化",
+          "守恒天平机制每卷末触发1次",
+          "虚空族变异体爆发与满月事件联动",
+          "以太免疫种族在卷3暗示/卷7现身/卷10决战"
+        ],
+        "constraints": [
+          "禁止突然治愈晶化病或以太再生",
+          "虚空族变异体爆发必须与角色决策相关",
+          "以太免疫种族能力上限最终卷前保持模糊"
+        ],
+        "open_questions": [
+          "守恒天平机制的全部规则是什么？",
+          "以太枯竭的根本原因是什么？",
+          "阿德琳与卡里昂的关系最终走向如何？"
+        ],
+        "best_for_steps": [
+          "chapter_plan"
+        ],
+        "best_for_reason": "该总纲清晰呈现了核心冲突升级轨迹、能力进化节点和种族关系转折点，为后续卷级拆分提供了精确锚点。",
+        "structured": {
+          "volume_index": 1,
+          "total_target_chapters": 12,
+          "chapters": [
+            {
+              "title": "枯萎征兆",
+              "summary": "人类村庄农作物突然枯萎，引发恐慌。",
+              "chapter_type": "intro",
+              "pov_character": "阿德琳·霜刃",
+              "main_event": "以太枯竭的初步迹象显现。",
+              "conflict": "村民对异常现象的不同解释导致分裂。",
+              "hook": "阿德琳发现枯萎区域有特殊能量波动。",
+              "target_words": 6000,
+              "chapter_index": 1
+            },
+            {
+              "title": "学者论断",
+              "summary": "晶裔学者提出以太转化率下降理论。",
+              "chapter_type": "exposition",
+              "pov_character": "晶裔学者",
+              "main_event": "晶裔科研团队发布警告。",
+              "conflict": "人类祭司坚持这是神灵惩罚。",
+              "hook": "学者发现能量波动与人类村庄吻合。",
+              "target_words": 5500,
+              "chapter_index": 2
+            },
+            {
+              "title": "觉醒时刻",
+              "summary": "阿德琳为救同伴首次无意识吸收以太。",
+              "chapter_type": "turning_point",
+              "pov_character": "阿德琳·霜刃",
+              "main_event": "虹吸能力意外觉醒。",
+              "conflict": "族人恐惧她的新能力。",
+              "hook": "吸收能量后出现未知副作用。",
+              "target_words": 7000,
+              "chapter_index": 3
+            },
+            {
+              "title": "长老决议",
+              "summary": "人类长老会议决定秘密保护阿德琳。",
+              "chapter_type": "decision",
+              "pov_character": "人类长老",
+              "main_event": "将阿德琳定为\"神选者\"。",
+              "conflict": "部分长老主张交出她换取和平。",
+              "hook": "派出信使向其他村庄求援。",
+              "target_words": 6000,
+              "chapter_index": 4
+            },
+            {
+              "title": "能量追踪",
+              "summary": "晶裔侦察兵追踪能量波动找到村庄。",
+              "chapter_type": "action",
+              "pov_character": "晶裔侦察兵",
+              "main_event": "发现阿德琳的能量特征。",
+              "conflict": "人类哨兵与侦察兵的遭遇战。",
+              "hook": "侦察兵发出紧急求援信号。",
+              "target_words": 6500,
+              "chapter_index": 5
+            },
+            {
+              "title": "首次冲突",
+              "summary": "晶裔突袭村庄试图掳走阿德琳。",
+              "chapter_type": "climax",
+              "pov_character": "阿德琳·霜刃",
+              "main_event": "两族首次正面武装冲突。",
+              "conflict": "阿德琳在抵抗与投降间抉择。",
+              "hook": "晶裔指挥官认出她的特殊能力。",
+              "target_words": 7500,
+              "chapter_index": 6
+            },
+            {
+              "title": "囚徒展示",
+              "summary": "阿德琳被迫在晶裔营地展示能力。",
+              "chapter_type": "revelation",
+              "pov_character": "阿德琳·霜刃",
+              "main_event": "为换取族人安全演示虹吸。",
+              "conflict": "晶裔科学家想解剖研究她。",
+              "hook": "能量测试引发仪器异常。",
+              "target_words": 7000,
+              "chapter_index": 7
+            },
+            {
+              "title": "营救失败",
+              "summary": "人类营救行动导致更多伤亡。",
+              "chapter_type": "setback",
+              "pov_character": "人类战士",
+              "main_event": "营救小队全军覆没。",
+              "conflict": "复仇情绪在人类中蔓延。",
+              "hook": "晶裔加强守卫戒备。",
+              "target_words": 6500,
+              "chapter_index": 8
+            },
+            {
+              "title": "病痛审问",
+              "summary": "卡里昂为延缓晶化病亲自审问阿德琳。",
+              "chapter_type": "confrontation",
+              "pov_character": "卡里昂·黑曜",
+              "main_event": "两大主角首次会面。",
+              "conflict": "卡里昂在病情与道德间挣扎。",
+              "hook": "发现阿德琳能缓解他的症状。",
+              "target_words": 7000,
+              "chapter_index": 9
+            },
+            {
+              "title": "变异威胁",
+              "summary": "虚空族边境出现受以太影响的变异体。",
+              "chapter_type": "complication",
+              "pov_character": "晶裔哨兵",
+              "main_event": "变异体开始攻击双方。",
+              "conflict": "两族都认为是对方制造的生物武器。",
+              "hook": "变异体展现出对阿德琳的特殊兴趣。",
+              "target_words": 6500,
+              "chapter_index": 10
+            },
+            {
+              "title": "临时同盟",
+              "summary": "三方达成临时停战协议对抗变异体。",
+              "chapter_type": "resolution",
+              "pov_character": "阿德琳·霜刃",
+              "main_event": "短暂的合作关系形成。",
+              "conflict": "同盟内部持续的不信任。",
+              "hook": "阿德琳情绪接近崩溃边缘。",
+              "target_words": 6000,
+              "chapter_index": 11
+            },
+            {
+              "title": "天平初现",
+              "summary": "阿德琳情绪失控触发守恒天平机制。",
+              "chapter_type": "cliffhanger",
+              "pov_character": "阿德琳·霜刃",
+              "main_event": "局部能量重组现象发生。",
+              "conflict": "各方势力试图控制这种现象。",
+              "hook": "卡里昂发现天平与晶化病的关联。",
+              "target_words": 7500,
+              "chapter_index": 12
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "agent": "rough_chapter_plan",
+        "step": "rough_chapter_plan",
+        "scope_kind": "volume",
+        "stale": false,
+        "state": "active",
+        "volume_index": 1,
+        "generated_payload": {
+          "content": "以太异常现象初现，阿德琳能力觉醒引发三方混战。",
+          "overview": "这是一个关于资源枯竭世界中种族冲突与生存斗争的史诗级奇幻故事。以太作为魔法能量源正在消失，引发三大种族（人类、晶裔、虚空族）的激烈争夺。主角阿德琳·霜刃拥有罕见的以太虹吸能力，成为各方争夺的焦点。与此同时，晶裔领袖卡里昂·黑曜的晶化病不断恶化，迫使他采取极端手段。故事将展现种族联盟的脆弱性、个人抉择的代价，以及在绝境中揭示的惊人真相。",
+          "key_facts": [
+            "以太转化率每卷下降12%，表现方式各不相同",
+            "每卷至少1次重大阵营转换",
+            "阿德琳的虹吸能力每两卷解锁1个新应用维度",
+            "卡里昂的晶化病按精确公式恶化",
+            "守恒天平机制每卷末触发1次",
+            "虚空族变异体爆发与满月事件联动",
+            "以太免疫种族在卷3暗示/卷7现身/卷10决战"
+          ],
+          "constraints": [
+            "禁止突然治愈晶化病或以太再生",
+            "虚空族变异体爆发必须与角色决策相关",
+            "以太免疫种族能力上限最终卷前保持模糊"
+          ],
+          "open_questions": [
+            "守恒天平机制的全部规则是什么？",
+            "以太枯竭的根本原因是什么？",
+            "阿德琳与卡里昂的关系最终走向如何？"
+          ],
+          "best_for_reason": "该总纲清晰呈现了核心冲突升级轨迹、能力进化节点和种族关系转折点，为后续卷级拆分提供了精确锚点。",
+          "structured": {
+            "volume_index": 1,
+            "total_target_chapters": 12,
+            "chapters": [
+              {
+                "title": "枯萎征兆",
+                "summary": "人类村庄农作物突然枯萎，引发恐慌。",
+                "chapter_type": "intro",
+                "pov_character": "阿德琳·霜刃",
+                "main_event": "以太枯竭的初步迹象显现。",
+                "conflict": "村民对异常现象的不同解释导致分裂。",
+                "hook": "阿德琳发现枯萎区域有特殊能量波动。",
+                "target_words": 6000,
+                "chapter_index": 1
+              },
+              {
+                "title": "学者论断",
+                "summary": "晶裔学者提出以太转化率下降理论。",
+                "chapter_type": "exposition",
+                "pov_character": "晶裔学者",
+                "main_event": "晶裔科研团队发布警告。",
+                "conflict": "人类祭司坚持这是神灵惩罚。",
+                "hook": "学者发现能量波动与人类村庄吻合。",
+                "target_words": 5500,
+                "chapter_index": 2
+              },
+              {
+                "title": "觉醒时刻",
+                "summary": "阿德琳为救同伴首次无意识吸收以太。",
+                "chapter_type": "turning_point",
+                "pov_character": "阿德琳·霜刃",
+                "main_event": "虹吸能力意外觉醒。",
+                "conflict": "族人恐惧她的新能力。",
+                "hook": "吸收能量后出现未知副作用。",
+                "target_words": 7000,
+                "chapter_index": 3
+              },
+              {
+                "title": "长老决议",
+                "summary": "人类长老会议决定秘密保护阿德琳。",
+                "chapter_type": "decision",
+                "pov_character": "人类长老",
+                "main_event": "将阿德琳定为\"神选者\"。",
+                "conflict": "部分长老主张交出她换取和平。",
+                "hook": "派出信使向其他村庄求援。",
+                "target_words": 6000,
+                "chapter_index": 4
+              },
+              {
+                "title": "能量追踪",
+                "summary": "晶裔侦察兵追踪能量波动找到村庄。",
+                "chapter_type": "action",
+                "pov_character": "晶裔侦察兵",
+                "main_event": "发现阿德琳的能量特征。",
+                "conflict": "人类哨兵与侦察兵的遭遇战。",
+                "hook": "侦察兵发出紧急求援信号。",
+                "target_words": 6500,
+                "chapter_index": 5
+              },
+              {
+                "title": "首次冲突",
+                "summary": "晶裔突袭村庄试图掳走阿德琳。",
+                "chapter_type": "climax",
+                "pov_character": "阿德琳·霜刃",
+                "main_event": "两族首次正面武装冲突。",
+                "conflict": "阿德琳在抵抗与投降间抉择。",
+                "hook": "晶裔指挥官认出她的特殊能力。",
+                "target_words": 7500,
+                "chapter_index": 6
+              },
+              {
+                "title": "囚徒展示",
+                "summary": "阿德琳被迫在晶裔营地展示能力。",
+                "chapter_type": "revelation",
+                "pov_character": "阿德琳·霜刃",
+                "main_event": "为换取族人安全演示虹吸。",
+                "conflict": "晶裔科学家想解剖研究她。",
+                "hook": "能量测试引发仪器异常。",
+                "target_words": 7000,
+                "chapter_index": 7
+              },
+              {
+                "title": "营救失败",
+                "summary": "人类营救行动导致更多伤亡。",
+                "chapter_type": "setback",
+                "pov_character": "人类战士",
+                "main_event": "营救小队全军覆没。",
+                "conflict": "复仇情绪在人类中蔓延。",
+                "hook": "晶裔加强守卫戒备。",
+                "target_words": 6500,
+                "chapter_index": 8
+              },
+              {
+                "title": "病痛审问",
+                "summary": "卡里昂为延缓晶化病亲自审问阿德琳。",
+                "chapter_type": "confrontation",
+                "pov_character": "卡里昂·黑曜",
+                "main_event": "两大主角首次会面。",
+                "conflict": "卡里昂在病情与道德间挣扎。",
+                "hook": "发现阿德琳能缓解他的症状。",
+                "target_words": 7000,
+                "chapter_index": 9
+              },
+              {
+                "title": "变异威胁",
+                "summary": "虚空族边境出现受以太影响的变异体。",
+                "chapter_type": "complication",
+                "pov_character": "晶裔哨兵",
+                "main_event": "变异体开始攻击双方。",
+                "conflict": "两族都认为是对方制造的生物武器。",
+                "hook": "变异体展现出对阿德琳的特殊兴趣。",
+                "target_words": 6500,
+                "chapter_index": 10
+              },
+              {
+                "title": "临时同盟",
+                "summary": "三方达成临时停战协议对抗变异体。",
+                "chapter_type": "resolution",
+                "pov_character": "阿德琳·霜刃",
+                "main_event": "短暂的合作关系形成。",
+                "conflict": "同盟内部持续的不信任。",
+                "hook": "阿德琳情绪接近崩溃边缘。",
+                "target_words": 6000,
+                "chapter_index": 11
+              },
+              {
+                "title": "天平初现",
+                "summary": "阿德琳情绪失控触发守恒天平机制。",
+                "chapter_type": "cliffhanger",
+                "pov_character": "阿德琳·霜刃",
+                "main_event": "局部能量重组现象发生。",
+                "conflict": "各方势力试图控制这种现象。",
+                "hook": "卡里昂发现天平与晶化病的关联。",
+                "target_words": 7500,
+                "chapter_index": 12
+              }
+            ]
+          }
+        }
+      }
+    },
+    "chapter_plan:1:1": {
+      "key": "chapter_plan:1:1",
+      "title": "章节计划",
+      "content": "人类村庄农作物突然枯萎引发恐慌，阿德琳发现特殊能量波动并意外吸收以太能量，同时晶裔侦察兵开始追踪异常。",
+      "summary": {
+        "summary": "本章作为故事开端，通过农作物枯萎现象展示以太枯竭的初步影响，同时引入主角阿德琳的虹吸能力和种族冲突的伏笔。",
+        "overview": "本章作为故事开端，通过农作物枯萎现象展示以太枯竭的初步影响，同时引入主角阿德琳的虹吸能力和种族冲突的伏笔。",
+        "key_facts": [
+          "以太枯竭首现形式：农作物枯萎伴随紫色能量纹路",
+          "阿德琳被动吸收以太时手掌出现紫光",
+          "晶裔侦察装备首次展示技术代差",
+          "老祭司加文的神罚论与理性派形成对立"
+        ],
+        "constraints": [
+          "阿德琳能力仅限被动感应",
+          "虚空族相关内容禁止出现",
+          "枯萎现象需与卷末守恒天平呼应"
+        ],
+        "open_questions": [
+          "紫色能量纹路与晶裔晶化病的关联？",
+          "侦察兵莱昂为何特别关注特定能量特征？",
+          "石英晶体排列异常暗示什么物理规律变化？"
+        ],
+        "best_for_steps": [
+          "chapter",
+          "revision",
+          "consistency"
+        ],
+        "best_for_reason": "本章完美建立核心冲突基础，同时通过多个细节为后续情节埋下伏笔。",
+        "structured": {
+          "volume_index": 1,
+          "chapter_index": 1,
+          "title": "枯萎征兆",
+          "summary": "人类村庄农作物突然枯萎引发恐慌，阿德琳发现特殊能量波动并意外吸收以太能量，同时晶裔侦察兵开始追踪异常。",
+          "chapter_type": "intro",
+          "pov_character": "阿德琳·霜刃",
+          "main_event": "阿德琳意外吸收以太能量",
+          "conflict": "村民对枯萎现象的解释分歧导致分裂",
+          "hook": "阿德琳手掌夜间散发紫光",
+          "target_words": 6666,
+          "min_words": 2000,
+          "characters": [
+            "阿德琳·霜刃（主角，人类村庄少女）",
+            "老祭司加文（人类村庄精神领袖）",
+            "农夫科尔（阿德琳的父亲）",
+            "侦察兵队长莱昂（晶裔侦察队指挥官）",
+            "见习学者塔尔（晶裔科研团队成员）"
+          ],
+          "introduced_characters": [
+            "侦察兵队长莱昂（晶裔侦察队指挥官）",
+            "见习学者塔尔（晶裔科研团队成员）"
+          ],
+          "scene_summaries": [
+            {
+              "scene_index": 1,
+              "summary": "阿德琳发现麦田出现反常紫色纹路的枯萎现象",
+              "pov_character": "阿德琳·霜刃",
+              "setting": "黎明时分的村庄麦田",
+              "key_action": "触摸枯萎麦秆时感到刺痛",
+              "foreshadowing": "枯萎纹路呈现晶体生长模式"
+            },
+            {
+              "scene_index": 2,
+              "summary": "村民集会讨论枯萎原因，老祭司宣称神灵惩罚",
+              "pov_character": "阿德琳·霜刃",
+              "setting": "村庄广场",
+              "key_action": "加文展示三版矛盾预言",
+              "foreshadowing": "提及上古时期类似灾祸"
+            },
+            {
+              "scene_index": 3,
+              "summary": "阿德琳采集样本时手掌吸收紫色能量",
+              "pov_character": "阿德琳·霜刃",
+              "setting": "枯萎最严重的田垄",
+              "key_action": "能量吸收引发短暂失明",
+              "foreshadowing": "石英晶体在吸收点呈放射状排列"
+            },
+            {
+              "scene_index": 4,
+              "summary": "科尔报告邻近村庄异常引发恐慌升级",
+              "pov_character": "阿德琳·霜刃",
+              "setting": "霜刃家厨房",
+              "key_action": "父亲展示晶化的小麦样本",
+              "foreshadowing": "提到晶裔边境活动增加"
+            },
+            {
+              "scene_index": 5,
+              "summary": "晶裔侦察兵追踪能量波动接近村庄",
+              "pov_character": "侦察兵队长莱昂",
+              "setting": "村庄外围森林",
+              "key_action": "莱昂记录仪器异常读数",
+              "foreshadowing": "提及卡里昂大人的特别指示"
+            },
+            {
+              "scene_index": 6,
+              "summary": "塔尔检测到阿德琳接触区域的独特能量残留",
+              "pov_character": "见习学者塔尔",
+              "setting": "晶裔移动实验室",
+              "key_action": "能量图谱与晶化病数据比对",
+              "foreshadowing": "发现读数波动与月相相关"
+            },
+            {
+              "scene_index": 7,
+              "summary": "阿德琳向父亲坦白能量吸收经历",
+              "pov_character": "阿德琳·霜刃",
+              "setting": "霜刃家阁楼",
+              "key_action": "两人决定暂时保密",
+              "foreshadowing": "科尔提及阿德琳母亲的异常死亡"
+            },
+            {
+              "scene_index": 8,
+              "summary": "村庄分裂为神罚派和理性调查派",
+              "pov_character": "阿德琳·霜刃",
+              "setting": "村庄酒馆",
+              "key_action": "年轻村民组建自卫队",
+              "foreshadowing": "有人提议向晶裔寻求帮助"
+            },
+            {
+              "scene_index": 9,
+              "summary": "阿德琳发现手掌散发微弱紫光",
+              "pov_character": "阿德琳·霜刃",
+              "setting": "阿德琳的卧室",
+              "key_action": "紫光随呼吸频率变化",
+              "foreshadowing": "窗外闪过晶裔侦察装备的反光"
+            }
+          ],
+          "continuity_notes": [
+            "紫色纹路需与卷7晶裔建筑晶化现象一致",
+            "能量吸收的生理反应要符合后续能力进化体系",
+            "莱昂的装备缺陷应在卷5伏击战中重现",
+            "石英晶体排列方式需与守恒天平现象呼应",
+            "加文的预言需在卷3开始部分应验"
+          ],
+          "writing_notes": [
+            "用触觉错位感描写能量吸收过程",
+            "通过鸟类迁徙展示生态异常",
+            "晶裔装备要有水晶共振音效细节",
+            "村民恐慌表现要体现代沟（老人跪拜/青年测量）",
+            "阿德琳父亲的态度转变要隐含对亡妻的秘密认知"
+          ]
+        }
+      },
+      "metadata": {
+        "agent": "chapter_plan",
+        "step": "chapter_plan",
+        "scope_kind": "chapter",
+        "stale": false,
+        "state": "active",
+        "volume_index": 1,
+        "chapter_index": 1,
+        "generated_payload": {
+          "content": "人类村庄农作物突然枯萎引发恐慌，阿德琳发现特殊能量波动并意外吸收以太能量，同时晶裔侦察兵开始追踪异常。",
+          "overview": "本章作为故事开端，通过农作物枯萎现象展示以太枯竭的初步影响，同时引入主角阿德琳的虹吸能力和种族冲突的伏笔。",
+          "key_facts": [
+            "以太枯竭首现形式：农作物枯萎伴随紫色能量纹路",
+            "阿德琳被动吸收以太时手掌出现紫光",
+            "晶裔侦察装备首次展示技术代差",
+            "老祭司加文的神罚论与理性派形成对立"
+          ],
+          "constraints": [
+            "阿德琳能力仅限被动感应",
+            "虚空族相关内容禁止出现",
+            "枯萎现象需与卷末守恒天平呼应"
+          ],
+          "open_questions": [
+            "紫色能量纹路与晶裔晶化病的关联？",
+            "侦察兵莱昂为何特别关注特定能量特征？",
+            "石英晶体排列异常暗示什么物理规律变化？"
+          ],
+          "best_for_reason": "本章完美建立核心冲突基础，同时通过多个细节为后续情节埋下伏笔。",
+          "structured": {
+            "volume_index": 1,
+            "chapter_index": 1,
+            "title": "枯萎征兆",
+            "summary": "人类村庄农作物突然枯萎引发恐慌，阿德琳发现特殊能量波动并意外吸收以太能量，同时晶裔侦察兵开始追踪异常。",
+            "chapter_type": "intro",
+            "pov_character": "阿德琳·霜刃",
+            "main_event": "阿德琳意外吸收以太能量",
+            "conflict": "村民对枯萎现象的解释分歧导致分裂",
+            "hook": "阿德琳手掌夜间散发紫光",
+            "target_words": 6666,
+            "min_words": 2000,
+            "characters": [
+              "阿德琳·霜刃（主角，人类村庄少女）",
+              "老祭司加文（人类村庄精神领袖）",
+              "农夫科尔（阿德琳的父亲）",
+              "侦察兵队长莱昂（晶裔侦察队指挥官）",
+              "见习学者塔尔（晶裔科研团队成员）"
+            ],
+            "introduced_characters": [
+              "侦察兵队长莱昂（晶裔侦察队指挥官）",
+              "见习学者塔尔（晶裔科研团队成员）"
+            ],
+            "scene_summaries": [
+              {
+                "scene_index": 1,
+                "summary": "阿德琳发现麦田出现反常紫色纹路的枯萎现象",
+                "pov_character": "阿德琳·霜刃",
+                "setting": "黎明时分的村庄麦田",
+                "key_action": "触摸枯萎麦秆时感到刺痛",
+                "foreshadowing": "枯萎纹路呈现晶体生长模式"
+              },
+              {
+                "scene_index": 2,
+                "summary": "村民集会讨论枯萎原因，老祭司宣称神灵惩罚",
+                "pov_character": "阿德琳·霜刃",
+                "setting": "村庄广场",
+                "key_action": "加文展示三版矛盾预言",
+                "foreshadowing": "提及上古时期类似灾祸"
+              },
+              {
+                "scene_index": 3,
+                "summary": "阿德琳采集样本时手掌吸收紫色能量",
+                "pov_character": "阿德琳·霜刃",
+                "setting": "枯萎最严重的田垄",
+                "key_action": "能量吸收引发短暂失明",
+                "foreshadowing": "石英晶体在吸收点呈放射状排列"
+              },
+              {
+                "scene_index": 4,
+                "summary": "科尔报告邻近村庄异常引发恐慌升级",
+                "pov_character": "阿德琳·霜刃",
+                "setting": "霜刃家厨房",
+                "key_action": "父亲展示晶化的小麦样本",
+                "foreshadowing": "提到晶裔边境活动增加"
+              },
+              {
+                "scene_index": 5,
+                "summary": "晶裔侦察兵追踪能量波动接近村庄",
+                "pov_character": "侦察兵队长莱昂",
+                "setting": "村庄外围森林",
+                "key_action": "莱昂记录仪器异常读数",
+                "foreshadowing": "提及卡里昂大人的特别指示"
+              },
+              {
+                "scene_index": 6,
+                "summary": "塔尔检测到阿德琳接触区域的独特能量残留",
+                "pov_character": "见习学者塔尔",
+                "setting": "晶裔移动实验室",
+                "key_action": "能量图谱与晶化病数据比对",
+                "foreshadowing": "发现读数波动与月相相关"
+              },
+              {
+                "scene_index": 7,
+                "summary": "阿德琳向父亲坦白能量吸收经历",
+                "pov_character": "阿德琳·霜刃",
+                "setting": "霜刃家阁楼",
+                "key_action": "两人决定暂时保密",
+                "foreshadowing": "科尔提及阿德琳母亲的异常死亡"
+              },
+              {
+                "scene_index": 8,
+                "summary": "村庄分裂为神罚派和理性调查派",
+                "pov_character": "阿德琳·霜刃",
+                "setting": "村庄酒馆",
+                "key_action": "年轻村民组建自卫队",
+                "foreshadowing": "有人提议向晶裔寻求帮助"
+              },
+              {
+                "scene_index": 9,
+                "summary": "阿德琳发现手掌散发微弱紫光",
+                "pov_character": "阿德琳·霜刃",
+                "setting": "阿德琳的卧室",
+                "key_action": "紫光随呼吸频率变化",
+                "foreshadowing": "窗外闪过晶裔侦察装备的反光"
+              }
+            ],
+            "continuity_notes": [
+              "紫色纹路需与卷7晶裔建筑晶化现象一致",
+              "能量吸收的生理反应要符合后续能力进化体系",
+              "莱昂的装备缺陷应在卷5伏击战中重现",
+              "石英晶体排列方式需与守恒天平现象呼应",
+              "加文的预言需在卷3开始部分应验"
+            ],
+            "writing_notes": [
+              "用触觉错位感描写能量吸收过程",
+              "通过鸟类迁徙展示生态异常",
+              "晶裔装备要有水晶共振音效细节",
+              "村民恐慌表现要体现代沟（老人跪拜/青年测量）",
+              "阿德琳父亲的态度转变要隐含对亡妻的秘密认知"
+            ]
+          }
+        }
+      }
     }
   },
   "created_at": "2026-04-16T03:50:17.351434Z",
-  "updated_at": "2026-04-21T05:56:56.778520Z"
+  "updated_at": "2026-04-21T07:04:53.558633Z"
 }

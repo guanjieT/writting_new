@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import unittest
 
+from novel_agent.agents import BaseAgent
 from novel_agent.domain import Artifact, ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError, WorkflowStep
 from novel_agent.orchestrator import NovelOrchestrator
 from novel_agent.services import AuditService, ProjectService, _artifact_key, _project_step_from_artifacts, build_artifact
@@ -323,6 +325,29 @@ class ScopeAndStructureTests(unittest.TestCase):
         }
 
         self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.CHAPTER)
+
+    def test_rough_chapter_plan_generation_infers_missing_chapter_indices(self) -> None:
+        agent = BaseAgent("rough_chapter_plan", WorkflowStep.ROUGH_CHAPTER_PLAN, "rough_chapter_plan", "rough_chapter_plan", "粗章纲")
+        payload = {
+            "content": "第1卷章节骨架摘要。",
+            "overview": "第1卷章节骨架。",
+            "key_facts": [],
+            "constraints": [],
+            "open_questions": [],
+            "best_for_reason": "",
+            "structured": {
+                "volume_index": 1,
+                "total_target_chapters": 2,
+                "chapters": [
+                    {"title": "一", "summary": "s", "chapter_type": "t", "pov_character": "p", "main_event": "e", "conflict": "c", "hook": "h", "target_words": 1000},
+                    {"title": "二", "summary": "s", "chapter_type": "t", "pov_character": "p", "main_event": "e", "conflict": "c", "hook": "h", "target_words": 1000},
+                ],
+            },
+        }
+
+        generated = agent._parse_generated_payload(json.dumps(payload, ensure_ascii=False))
+
+        self.assertEqual([chapter["chapter_index"] for chapter in generated.structured["chapters"]], [1, 2])
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,19 @@
 import { getArtifact, getScopedArtifact } from './artifact-selectors.js';
 
+const CHINESE_NUMBER_MAP = {
+  '零': 0,
+  '一': 1,
+  '二': 2,
+  '两': 2,
+  '三': 3,
+  '四': 4,
+  '五': 5,
+  '六': 6,
+  '七': 7,
+  '八': 8,
+  '九': 9,
+};
+
 function cleanOutlineLine(value) {
   return String(value || '')
     .replace(/^[-•*\s]+/, '')
@@ -7,19 +21,6 @@ function cleanOutlineLine(value) {
 }
 
 function parseChineseNumber(value) {
-  const map = {
-    '零': 0,
-    '一': 1,
-    '二': 2,
-    '两': 2,
-    '三': 3,
-    '四': 4,
-    '五': 5,
-    '六': 6,
-    '七': 7,
-    '八': 8,
-    '九': 9,
-  };
   const text = String(value || '').trim();
   if (!text) {
     return 0;
@@ -35,8 +36,8 @@ function parseChineseNumber(value) {
       current = 0;
       continue;
     }
-    if (Object.prototype.hasOwnProperty.call(map, char)) {
-      current = map[char];
+    if (Object.prototype.hasOwnProperty.call(CHINESE_NUMBER_MAP, char)) {
+      current = CHINESE_NUMBER_MAP[char];
     }
   }
   return total + current;
@@ -54,7 +55,7 @@ export function getGeneratedStructuredPayload(artifact) {
   return null;
 }
 
-export function parseOutlineVolumeSections(snapshot) {
+export function parseRoughVolumeOutlineVolumes(snapshot) {
   const outlineArtifact = getArtifact(snapshot, 'rough_volume_outline') || getArtifact(snapshot, 'outline');
   const structured = getGeneratedStructuredPayload(outlineArtifact);
   if (structured && Array.isArray(structured.volumes) && structured.volumes.length) {
@@ -71,6 +72,7 @@ export function parseOutlineVolumeSections(snapshot) {
       }))
       .filter((item) => item.index > 0);
   }
+
   const generatedContent = outlineArtifact?.metadata?.generated_payload?.content || outlineArtifact?.content || '';
   const text = String(generatedContent || '').trim();
   if (!text) {
@@ -99,6 +101,8 @@ export function parseOutlineVolumeSections(snapshot) {
         conflict: '',
         hook: '',
         chapter_briefs: [],
+        target_chapter_count: 0,
+        target_words: 0,
       };
       inChapterBriefs = false;
       continue;
@@ -155,7 +159,7 @@ export function parseOutlineVolumeSections(snapshot) {
   return sections;
 }
 
-function parseRoughChapterPlanSections(snapshot, volumeIndex = 1) {
+export function parseRoughChapterPlanChapters(snapshot, volumeIndex = 1) {
   const roughArtifact = getScopedArtifact(snapshot, 'rough_chapter_plan', { volumeIndex });
   const structured = getGeneratedStructuredPayload(roughArtifact);
   if (structured && Array.isArray(structured.chapters) && structured.chapters.length) {
@@ -174,6 +178,7 @@ function parseRoughChapterPlanSections(snapshot, volumeIndex = 1) {
       }))
       .filter((item) => item.index > 0);
   }
+
   const generatedContent = roughArtifact?.metadata?.generated_payload?.content || roughArtifact?.content || '';
   const text = String(generatedContent || '').trim();
   if (!text) {
@@ -204,6 +209,8 @@ function parseRoughChapterPlanSections(snapshot, volumeIndex = 1) {
         conflict: '',
         hook: '',
         scene_summaries: [],
+        main_event: '',
+        target_words: 0,
       };
       inScenes = false;
       continue;
@@ -272,72 +279,12 @@ function parseRoughChapterPlanSections(snapshot, volumeIndex = 1) {
   return chapters;
 }
 
-export function extractRoughChapterPlanChapterCount(snapshot, volumeIndex = 1) {
+export function getRoughChapterPlanChapterCount(snapshot, volumeIndex = 1) {
   const roughArtifact = getScopedArtifact(snapshot, 'rough_chapter_plan', { volumeIndex });
   const structured = getGeneratedStructuredPayload(roughArtifact);
   if (structured && Array.isArray(structured.chapters) && structured.chapters.length) {
     const explicitCount = Number(structured.total_target_chapters || 0) || 0;
     return explicitCount > 0 ? explicitCount : structured.chapters.length;
   }
-  return parseRoughChapterPlanSections(snapshot, volumeIndex).length;
-}
-
-export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
-  const sections = parseOutlineVolumeSections(snapshot);
-  if (!sections.length) {
-    return null;
-  }
-
-  const safeIndex = Math.max(Number(volumeIndex) || 1, 1);
-  const selected = sections.find((section) => section.index === safeIndex) || sections[0];
-  if (!selected) {
-    return null;
-  }
-
-  const chapterCountFromBriefs = selected.chapter_briefs.reduce((maxValue, brief) => {
-    const match = brief.match(/(\d+)(?:\s*[-~—]\s*(\d+))?\s*章/);
-    if (!match) {
-      return maxValue;
-    }
-    const endValue = Number(match[2] || match[1]) || 0;
-    return Math.max(maxValue, endValue);
-  }, 0);
-
-  const summaryParts = [selected.goal, selected.conflict, selected.hook].filter(Boolean);
-  return {
-    volume_title: selected.title || '',
-    volume_summary: summaryParts.join('；'),
-    volume_goal: selected.goal || '',
-    volume_conflict: selected.conflict || '',
-    volume_hook: selected.hook || '',
-    chapter_briefs: selected.chapter_briefs,
-    target_chapter_count: selected.target_chapter_count || chapterCountFromBriefs || selected.chapter_briefs.length || 0,
-  };
-}
-
-export function extractChapterPlanDefaults(snapshot, volumeIndex = 1, chapterIndex = 1) {
-  const chapters = parseRoughChapterPlanSections(snapshot, volumeIndex);
-  if (!chapters.length) {
-    return null;
-  }
-
-  const safeIndex = Math.max(Number(chapterIndex) || 1, 1);
-  const selected = chapters.find((chapter) => chapter.index === safeIndex) || chapters[0];
-  if (!selected) {
-    return null;
-  }
-
-  return {
-    volume_index: Math.max(Number(volumeIndex) || 1, 1),
-    chapter_index: selected.index,
-    chapter_title: selected.title || '',
-    chapter_summary: selected.summary || '',
-    chapter_type: selected.chapter_type || '主线推进章',
-    pov_character: selected.pov_character || '',
-    conflict: selected.conflict || '',
-    hook: selected.hook || '',
-    scene_summaries: selected.scene_summaries,
-    main_event: selected.main_event || '',
-    target_words: selected.target_words || 0,
-  };
+  return parseRoughChapterPlanChapters(snapshot, volumeIndex).length;
 }

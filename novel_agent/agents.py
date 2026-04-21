@@ -79,6 +79,32 @@ def _require_keys(step: str, structured: dict[str, Any], keys: tuple[str, ...]) 
         raise ValueError(f"{step} structured payload is missing required fields: {', '.join(missing)}")
 
 
+def _normalize_structured_payload(step: str, payload: GeneratedArtifactPayload) -> None:
+    structured = dict(payload.structured or {})
+    if step != "rough_chapter_plan":
+        payload.structured = structured
+        return
+
+    chapters = structured.get("chapters")
+    if isinstance(chapters, list):
+        if not structured.get("total_target_chapters"):
+            structured["total_target_chapters"] = len(chapters)
+        normalized_chapters: list[Any] = []
+        for position, chapter in enumerate(chapters, start=1):
+            if not isinstance(chapter, dict):
+                normalized_chapters.append(chapter)
+                continue
+            normalized_chapter = dict(chapter)
+            chapter_index = normalized_chapter.get("chapter_index", normalized_chapter.get("index"))
+            if chapter_index in (None, ""):
+                chapter_index = position
+            normalized_chapter["chapter_index"] = chapter_index
+            normalized_chapters.append(normalized_chapter)
+        structured["chapters"] = normalized_chapters
+
+    payload.structured = structured
+
+
 def _validate_chapter_sequence(step: str, structured: dict[str, Any]) -> None:
     chapters = structured.get("chapters")
     if not isinstance(chapters, list) or not chapters:
@@ -251,6 +277,7 @@ class BaseAgent:
         if not isinstance(payload, dict):
             raise ValueError("LLM returned a non-object generation payload")
         generated_payload = GeneratedArtifactPayload.model_validate(payload)
+        _normalize_structured_payload(self.step.value, generated_payload)
         _validate_structured_payload(self.step.value, generated_payload)
         return generated_payload
 

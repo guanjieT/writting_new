@@ -1,11 +1,11 @@
 import { api } from './api-client.js';
 import { waitForTask } from './api-client.js';
 import { badge, escapeHtml, formatDate, renderJsonPreview, truncate } from './dom.js';
-import { getArtifact, getArtifactForStep, getScopedArtifact, getStepDependencies, getStepLabel, getStepStatus } from './artifact-selectors.js';
-import { getStepMeta } from './step-meta.js';
+import { getArtifact, getArtifactForStep, getScopedArtifact, getStepStatus } from './artifact-selectors.js';
+import { getStepDependencies, getStepLabel, getStepMeta } from './step-meta.js';
 import { extractChapterPlanDefaults, extractVolumeOutlineDefaults } from './planning-defaults.js';
-import { dependencySelectionFor, normalizeScopeSelection, getStepScopeKind } from './scope-utils.js';
-import { serializeStepPayload } from './app-config.js';
+import { dependencySelectionFor, normalizeScopeSelection } from './scope-utils.js';
+import { listFromText } from './state.js';
 
 export function renderField(field, value) {
   const safeValue = value ?? '';
@@ -243,6 +243,29 @@ export async function runFieldCompletion({ projectId, step, form, button, onProg
   field.dispatchEvent(new Event('input', { bubbles: true }));
   field.dispatchEvent(new Event('change', { bubbles: true }));
   onProgress?.('AI 补全已回填。');
+}
+
+function serializeStepPayload(form, step) {
+  const fields = getStepMeta(step).fields || [];
+  const formData = new FormData(form);
+  const payload = {};
+  for (const field of fields) {
+    const rawValue = formData.get(field.key);
+    if (field.type === 'checkbox') {
+      payload[field.key] = rawValue === 'on';
+      continue;
+    }
+    if (field.type === 'number') {
+      payload[field.key] = Number(rawValue || field.defaultValue || 0);
+      continue;
+    }
+    if (field.list) {
+      payload[field.key] = listFromText(rawValue || '');
+      continue;
+    }
+    payload[field.key] = String(rawValue || '').trim();
+  }
+  return payload;
 }
 
 export function renderArtifactBlock(snapshot, step, selection = {}) {
