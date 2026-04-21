@@ -3,6 +3,7 @@ import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getFieldDisplayValue, getSco
 import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderDependencyList, renderField, renderStageOverview, renderTaskList, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
+import { getArtifact, getScopedArtifact } from './app-config.js';
 
 const PAGE_KEY = document.body.dataset.page || 'outline';
 const PAGE_CONFIG = {
@@ -348,9 +349,10 @@ function renderWorkspace(selection) {
 
     deleteButton.addEventListener('click', async () => {
       try {
+        const artifact = getScopedArtifact(currentSnapshot, step, stepSelection) || getArtifact(currentSnapshot, step);
         const result = await deleteStepArtifact({
           projectId: currentSnapshot.project.project_id,
-          step,
+          artifactKey: artifact?.key,
           label: stepMeta.objectName || stepMeta.label,
         });
         if (!result) {

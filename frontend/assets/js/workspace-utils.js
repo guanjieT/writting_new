@@ -1,7 +1,7 @@
 import { api } from './api-client.js';
 import { waitForTask } from './api-client.js';
 import { badge, escapeHtml, formatDate, renderJsonPreview, truncate } from './dom.js';
-import { extractChapterPlanDefaults, extractVolumeOutlineDefaults, getArtifact, getScopedArtifact, getStepDependencies, getStepMeta, getStepLabel, getStepScopeKind, getStepStatus, serializeStepPayload } from './app-config.js';
+import { extractChapterPlanDefaults, extractVolumeOutlineDefaults, getArtifact, getArtifactForStep, getScopedArtifact, getStepDependencies, getStepMeta, getStepLabel, getStepScopeKind, getStepStatus, serializeStepPayload } from './app-config.js';
 
 export function renderField(field, value) {
   const safeValue = value ?? '';
@@ -242,7 +242,7 @@ export async function runFieldCompletion({ projectId, step, form, button, onProg
 }
 
 export function renderArtifactBlock(snapshot, step, selection = {}) {
-  const artifact = getScopedArtifact(snapshot, step, selection) || (getStepScopeKind(step) === 'project' ? getArtifact(snapshot, step) : null);
+  const artifact = getArtifactForStep(snapshot, step, selection);
   const meta = getStepMeta(step);
   if (!artifact) {
     return `
@@ -338,7 +338,8 @@ export function renderDependencyList(step, dependencyMap, snapshot, selection = 
   return `
     <div class="stack-list">
       ${dependencies.map((dependency) => {
-        const ready = Boolean(getScopedArtifact(snapshot, dependency, selection) || (getStepScopeKind(dependency) === 'project' ? getArtifact(snapshot, dependency) : null));
+        const dependencySelection = dependencySelectionFor(step, dependency, selection);
+        const ready = Boolean(getArtifactForStep(snapshot, dependency, dependencySelection));
         return `
           <div class="dependency-row">
             <span>${escapeHtml(getStepLabel(dependency))}</span>
@@ -355,6 +356,21 @@ function normalizeSubmittedSelection(selection = {}, payload = {}) {
     volumeIndex: Math.max(Number(payload.volume_index || payload.volumeIndex || selection.volumeIndex || selection.volume_index || 1) || 1, 1),
     chapterIndex: Math.max(Number(payload.chapter_index || payload.chapterIndex || selection.chapterIndex || selection.chapter_index || 1) || 1, 1),
   };
+}
+
+function dependencySelectionFor(step, dependency, selection = {}) {
+  if (!selection || (selection.volumeIndex === undefined && selection.volume_index === undefined && selection.chapterIndex === undefined && selection.chapter_index === undefined)) {
+    return {};
+  }
+  const normalized = normalizeSubmittedSelection(selection);
+  const dependencyScope = getStepScopeKind(dependency);
+  if (dependencyScope === 'volume') {
+    return { volumeIndex: normalized.volumeIndex };
+  }
+  if (dependencyScope === 'chapter') {
+    return { volumeIndex: normalized.volumeIndex, chapterIndex: normalized.chapterIndex };
+  }
+  return {};
 }
 
 function buildBaseArtifactPayload(step, snapshot, selection = {}, payload = {}) {
@@ -407,18 +423,22 @@ export async function runStepFromForm({ projectId, step, form, snapshot = null, 
   return finishedTask;
 }
 
-export async function deleteStepArtifact({ projectId, step, label }) {
+export async function deleteStepArtifact({ projectId, step, artifactKey, label }) {
   const confirmed = window.confirm(`删除“${label}”后，依赖它的后续产物也会被清理。确定继续吗？`);
   if (!confirmed) {
     return null;
   }
-  return api.deleteProjectArtifact(projectId, step);
+  const targetKey = artifactKey || step;
+  if (!targetKey) {
+    throw new Error('缺少真实的产物键。');
+  }
+  return api.deleteProjectArtifact(projectId, targetKey);
 }
 
 export function renderStageOverview(steps, snapshot, dependencyMap, tasks = [], selection = {}) {
   return steps.map((step) => {
     const status = getStepStatus(step, snapshot, dependencyMap, tasks, selection);
-    const artifact = getScopedArtifact(snapshot, step, selection) || getArtifact(snapshot, step);
+    const artifact = getArtifactForStep(snapshot, step, selection);
     return `
       <article class="stat-card">
         <div class="stat-card-head">

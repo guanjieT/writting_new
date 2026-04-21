@@ -180,7 +180,7 @@ function renderMatrix(snapshot, projectId) {
               <p>${escapeHtml(truncate(artifact?.content || '尚未生成结果。', 120))}</p>
               <div class="actions-row wrap">
                 <a class="secondary-link" href="${withProjectQuery(link, projectId)}">打开对象</a>
-                ${artifact ? `<button class="ghost danger" type="button" data-delete-artifact="${step}">删除产物</button>` : ''}
+                ${artifact ? `<button class="ghost danger" type="button" data-delete-artifact-key="${artifact.key}" data-artifact-title="${escapeHtml(artifact.title || getStepLabel(step, workflowSteps))}">删除产物</button>` : ''}
               </div>
             </article>
           `;
@@ -189,17 +189,17 @@ function renderMatrix(snapshot, projectId) {
     </section>
   `).join('');
 
-  matrix.querySelectorAll('[data-delete-artifact]').forEach((button) => {
+  matrix.querySelectorAll('[data-delete-artifact-key]').forEach((button) => {
     button.addEventListener('click', async () => {
-      const step = button.getAttribute('data-delete-artifact');
-      if (!step) {
+      const artifactKey = button.getAttribute('data-delete-artifact-key');
+      if (!artifactKey) {
         return;
       }
-      const confirmed = window.confirm(`删除“${getStepLabel(step, workflowSteps)}”后，依赖它的下游对象也会被清理，是否继续？`);
+      const confirmed = window.confirm(`删除“${button.getAttribute('data-artifact-title') || '该产物'}”后，依赖它的下游对象也会被清理，是否继续？`);
       if (!confirmed) {
         return;
       }
-      await api.deleteProjectArtifact(projectId, step);
+      await api.deleteProjectArtifact(projectId, artifactKey);
       await loadPage();
     });
   });

@@ -67,7 +67,6 @@ uvicorn novel_agent.main:app --reload --host 127.0.0.1 --port 8001
 | `NOVEL_AGENT_LLM_TIMEOUT` | LLM 请求超时 | `60` |
 | `NOVEL_AGENT_DEFAULT_TEMPERATURE` | 默认温度 | `0.7` |
 | `NOVEL_AGENT_DEFAULT_MAX_TOKENS` | 默认输出长度 | `1200` |
-| `NOVEL_AGENT_TASK_TIMEOUT_SECONDS` | 任务超时 | `600` |
 | `NOVEL_AGENT_ENABLE_AUDIT` | 是否启用审计 | `true` |
 
 ## 目录结构

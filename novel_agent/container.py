@@ -45,7 +45,7 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
     llm_service = LLMService(provider)
     project_service = ProjectService(project_repository)
     audit_service = AuditService(audit_sink if resolved_config.enable_audit else None)
-    task_service = TaskService(task_store, ThreadPoolExecutor(max_workers=4), resolved_config.task_timeout_seconds)
+    task_service = TaskService(task_store, ThreadPoolExecutor(max_workers=4))
     orchestrator = NovelOrchestrator.build(
         project_service=project_service,
         audit_service=audit_service,

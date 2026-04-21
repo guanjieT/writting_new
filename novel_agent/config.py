@@ -64,7 +64,6 @@ class AppConfig:
     llm_timeout: float = 60.0
     default_temperature: float = 0.7
     default_max_tokens: int = 1200
-    task_timeout_seconds: int = 600
     enable_audit: bool = True
     audit_read_limit: int = 200
 
@@ -113,7 +112,6 @@ def load_config(base_dir: str | Path | None = None) -> AppConfig:
         llm_timeout=_first_env_float("NOVEL_AGENT_LLM_TIMEOUT", "NOVEL_LLM_TIMEOUT", default=60.0),
         default_temperature=_first_env_float("NOVEL_AGENT_DEFAULT_TEMPERATURE", default=0.7),
         default_max_tokens=_first_env_int("NOVEL_AGENT_DEFAULT_MAX_TOKENS", default=1200),
-        task_timeout_seconds=_first_env_int("NOVEL_AGENT_TASK_TIMEOUT_SECONDS", default=600),
         enable_audit=_parse_bool(os.getenv("NOVEL_AGENT_ENABLE_AUDIT", os.getenv("NOVEL_AUDIT_ENABLED")), True),
         audit_read_limit=_first_env_int("NOVEL_AGENT_AUDIT_READ_LIMIT", "NOVEL_AUDIT_READ_LIMIT", default=200),
     )

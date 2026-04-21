@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-import re
 from typing import Any
 
 from .agents import AgentDependencies, BaseAgent, build_agent_registry
-from .domain import AgentOutput, NovelProject, UnsupportedStepError, WorkflowOrderError, WorkflowStep
+from .domain import AgentOutput, Artifact, NovelProject, UnsupportedStepError, WorkflowOrderError, WorkflowStep
 from .workflow_spec import workflow_dependency_map
 from .services import AuditService, ProjectService, agent_context, _artifact_scope_payload, _scope_matches
 
@@ -20,6 +19,35 @@ def _to_chinese_number(value: int) -> str:
     tens, ones = divmod(value, 10)
     prefix = f"{digits[tens]}十" if tens > 1 else "十"
     return f"{prefix}{digits[ones]}" if ones else prefix
+
+
+def _artifact_structured_payload(artifact: Artifact) -> dict[str, Any]:
+    summary_structured = artifact.summary.structured if isinstance(artifact.summary.structured, dict) else {}
+    if summary_structured:
+        return summary_structured
+
+    generated_payload = artifact.metadata.get("generated_payload")
+    if isinstance(generated_payload, Mapping):
+        structured = generated_payload.get("structured")
+        if isinstance(structured, dict):
+            return structured
+
+    return {}
+
+
+def _structured_entry_exists(entries: Any, index_key: str, index: int) -> bool:
+    if not isinstance(entries, list):
+        return False
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        try:
+            entry_index = int(entry.get(index_key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if entry_index == index:
+            return True
+    return False
 
 
 @dataclass
@@ -110,7 +138,8 @@ class NovelOrchestrator:
             parent = next((candidate for candidate in project.artifacts.values() if _scope_matches(candidate, "rough_volume_outline", {"scope_kind": "project"})), None)
             if parent is None:
                 raise WorkflowOrderError("step 'volume_outline' requires rough_volume_outline")
-            if not self._artifact_contains_entry(parent.content, "卷", volume_index):
+            structured = _artifact_structured_payload(parent)
+            if not _structured_entry_exists(structured.get("volumes"), "volume_index", volume_index):
                 raise WorkflowOrderError(f"rough_volume_outline is missing volume {volume_index}")
 
         if step == "chapter_plan":
@@ -119,14 +148,6 @@ class NovelOrchestrator:
             parent = next((candidate for candidate in project.artifacts.values() if _scope_matches(candidate, "rough_chapter_plan", parent_scope)), None)
             if parent is None:
                 raise WorkflowOrderError("step 'chapter_plan' requires rough_chapter_plan")
-            if not self._artifact_contains_entry(parent.content, "章", chapter_index):
+            structured = _artifact_structured_payload(parent)
+            if not _structured_entry_exists(structured.get("chapters"), "chapter_index", chapter_index):
                 raise WorkflowOrderError(f"rough_chapter_plan is missing chapter {chapter_index}")
-
-    def _artifact_contains_entry(self, content: str, unit: str, index: int) -> bool:
-        text = str(content or "")
-        patterns = [
-            rf"^第{index}{unit}[:：]",
-            rf"^第{index}个{unit}[:：]",
-            rf"^第{_to_chinese_number(index)}{unit}[:：]",
-        ]
-        return any(re.search(pattern, text, re.MULTILINE) for pattern in patterns)

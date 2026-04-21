@@ -267,7 +267,6 @@ class AuditService:
 class TaskService:
     store: TaskStore
     executor: ThreadPoolExecutor
-    default_timeout_seconds: int = 600
     _futures: dict[str, Future[Any]] | None = None
 
     def __post_init__(self) -> None:

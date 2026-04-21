@@ -225,9 +225,10 @@ function renderWorkspace() {
 
   deleteButton.addEventListener('click', async () => {
     try {
+      const artifact = getArtifact(currentSnapshot, step);
       const result = await deleteStepArtifact({
         projectId: currentSnapshot.project.project_id,
-        step,
+        artifactKey: artifact?.key,
         label: meta.label,
       });
       if (!result) {

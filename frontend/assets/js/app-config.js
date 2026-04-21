@@ -288,7 +288,8 @@ export function getStepDependencies(step, dependencyMap = {}) {
 }
 
 export function getArtifact(snapshot, step) {
-  return getArtifactsForStep(snapshot, step)[0] || null;
+  const artifacts = getArtifactsForStep(snapshot, step);
+  return artifacts.length ? artifacts[artifacts.length - 1] : null;
 }
 
 const ARTIFACT_SCOPE_KIND = {
@@ -312,6 +313,25 @@ function normalizeScopeSelection(selection = {}) {
 
 export function getStepScopeKind(step) {
   return ARTIFACT_SCOPE_KIND[step] || 'project';
+}
+
+function hasExplicitSelection(selection = {}) {
+  return Boolean(
+    selection
+    && (
+      selection.volumeIndex !== undefined
+      || selection.volume_index !== undefined
+      || selection.chapterIndex !== undefined
+      || selection.chapter_index !== undefined
+    )
+  );
+}
+
+export function getArtifactForStep(snapshot, step, selection = {}) {
+  if (hasExplicitSelection(selection)) {
+    return getScopedArtifact(snapshot, step, selection);
+  }
+  return getArtifact(snapshot, step);
 }
 
 export function getArtifactsForStep(snapshot, step) {
@@ -338,6 +358,9 @@ export function getScopedArtifact(snapshot, step, selection = {}) {
 }
 
 function dependencySelectionFor(step, dependency, selection = {}) {
+  if (!hasExplicitSelection(selection)) {
+    return {};
+  }
   const normalized = normalizeScopeSelection(selection);
   const dependencyScope = getStepScopeKind(dependency);
   if (dependencyScope === 'volume') {
@@ -362,7 +385,7 @@ export function isUnlocked(step, snapshot, dependencyMap, selection = {}) {
 }
 
 export function getStepStatus(step, snapshot, dependencyMap, tasks = [], selection = {}) {
-  const artifact = getScopedArtifact(snapshot, step, selection);
+  const artifact = getArtifactForStep(snapshot, step, selection);
   if (artifact) {
     return artifact?.metadata?.stale ? { tone: 'warn', text: '已失效' } : { tone: 'success', text: '已产出' };
   }
