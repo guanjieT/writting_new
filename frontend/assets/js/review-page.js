@@ -1,9 +1,10 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getArtifact, getStepDependencies, getStepLabel, getStepMeta, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getArtifact, getScopedArtifact, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, truncate } from './dom.js';
 import { getPageProjectId, setSelectedProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 
 const summary = document.getElementById('review-summary');
+const selectionPanel = document.getElementById('review-selection');
 const queue = document.getElementById('review-queue');
 const actions = document.getElementById('review-actions');
 const matrix = document.getElementById('review-matrix');
@@ -14,12 +15,110 @@ let workflowSteps = FALLBACK_WORKFLOW_STEPS;
 let dependencyMap = Object.fromEntries(FALLBACK_WORKFLOW_STEPS.map((step) => [step.key, step.depends_on || []]));
 let currentSnapshot = null;
 let currentTasks = [];
+let currentSelection = getReviewSelectionFromUrl();
+
+function getReviewSelectionFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    volumeIndex: Math.max(Number(params.get('volume_index') || '1') || 1, 1),
+    chapterIndex: Math.max(Number(params.get('chapter_index') || '1') || 1, 1),
+  };
+}
+
+function syncReviewSelectionToUrl(selection) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('volume_index', String(selection.volumeIndex || 1));
+  url.searchParams.set('chapter_index', String(selection.chapterIndex || 1));
+  window.history.replaceState({}, '', url);
+}
+
+function buildStepUrl(step, projectId) {
+  const meta = getStepMeta(step);
+  const path = meta.page === 'outline' ? '/outline' : meta.page === 'volume-outline' ? '/volume-outline' : meta.page === 'chapter-plan' ? '/chapter-plan' : '/workflow';
+  const url = new URL(path, window.location.origin);
+  if (projectId) {
+    url.searchParams.set('project_id', projectId);
+  }
+  if (getStepScopeKind(step) === 'chapter') {
+    url.searchParams.set('volume_index', String(currentSelection.volumeIndex));
+    url.searchParams.set('chapter_index', String(currentSelection.chapterIndex));
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+function clampReviewSelection(snapshot, selection = {}) {
+  const volumeCount = Math.max(Number(snapshot?.project?.input?.target_volume_count || 1), 1);
+  const chapterCount = Math.max(Number(snapshot?.project?.input?.target_chapters_per_volume || 1), 1);
+  return {
+    volumeIndex: Math.min(Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1), volumeCount),
+    chapterIndex: Math.min(Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1), chapterCount),
+  };
+}
+
+function selectionForStep(step) {
+  return getStepScopeKind(step) === 'chapter' ? currentSelection : {};
+}
+
+function renderSelection(snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  const project = snapshot.project;
+  const volumeCount = Math.max(Number(project.input.target_volume_count || 1), 1);
+  const chapterCount = Math.max(Number(project.input.target_chapters_per_volume || 1), 1);
+  const volumeOptions = Array.from({ length: volumeCount }, (_, index) => index + 1);
+  const chapterOptions = Array.from({ length: chapterCount }, (_, index) => index + 1);
+
+  selectionPanel.innerHTML = `
+    <div class="context-card subtle">
+      <p class="eyebrow">章节上下文</p>
+      <h3>第 ${currentSelection.volumeIndex} 卷 · 第 ${currentSelection.chapterIndex} 章</h3>
+      <div class="form-grid">
+        <div class="field">
+          <label for="review-volume-index">卷序号</label>
+          <select id="review-volume-index" data-review-volume-index>
+            ${volumeOptions.map((value) => `<option value="${value}" ${value === currentSelection.volumeIndex ? 'selected' : ''}>第 ${value} 卷</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label for="review-chapter-index">章节序号</label>
+          <select id="review-chapter-index" data-review-chapter-index>
+            ${chapterOptions.map((value) => `<option value="${value}" ${value === currentSelection.chapterIndex ? 'selected' : ''}>第 ${value} 章</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <p class="muted">章节类对象的状态、展示和删除都以这里的卷/章为准。</p>
+    </div>
+  `;
+
+  selectionPanel.querySelectorAll('[data-review-volume-index], [data-review-chapter-index]').forEach((control) => {
+    control.addEventListener('change', () => {
+      currentSelection = clampReviewSelection(currentSnapshot, {
+        volumeIndex: Number(selectionPanel.querySelector('[data-review-volume-index]')?.value || currentSelection.volumeIndex || 1) || 1,
+        chapterIndex: Number(selectionPanel.querySelector('[data-review-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
+      });
+      syncReviewSelectionToUrl(currentSelection);
+      renderPage();
+    });
+  });
+}
+
+function renderPage() {
+  renderSummary(currentSnapshot, currentTasks);
+  renderQueueItems(buildIssueQueue(currentSnapshot, currentTasks), currentSnapshot.project.project_id);
+  renderActionsPanel(buildIssueQueue(currentSnapshot, currentTasks), currentSnapshot.project.project_id);
+  renderMatrix(currentSnapshot, currentSnapshot.project.project_id);
+  renderTasks(currentTasks);
+  renderSelection(currentSnapshot);
+}
 
 function buildIssueQueue(snapshot, tasks) {
   const issues = [];
   for (const stepDef of workflowSteps) {
     const step = stepDef.key;
-    const artifact = getArtifact(snapshot, step);
+    const selection = selectionForStep(step);
+    const artifact = getStepScopeKind(step) === 'chapter' ? getScopedArtifact(snapshot, step, selection) : getArtifact(snapshot, step);
     const latestTask = [...tasks].filter((task) => task.task_name === step).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
     if (latestTask?.status === 'failed') {
@@ -46,7 +145,7 @@ function buildIssueQueue(snapshot, tasks) {
     }
   }
 
-  if (getArtifact(snapshot, 'chapter') && !getArtifact(snapshot, 'consistency')) {
+    if (getScopedArtifact(snapshot, 'chapter', currentSelection) && !getScopedArtifact(snapshot, 'consistency', currentSelection)) {
     issues.push({
       severity: '中',
       tone: 'warn',
@@ -57,7 +156,7 @@ function buildIssueQueue(snapshot, tasks) {
     });
   }
 
-  if (getArtifact(snapshot, 'chapter') && !getArtifact(snapshot, 'revision')) {
+    if (getScopedArtifact(snapshot, 'chapter', currentSelection) && !getScopedArtifact(snapshot, 'revision', currentSelection)) {
     issues.push({
       severity: '中',
       tone: 'warn',
@@ -123,7 +222,7 @@ function renderQueueItems(items, projectId) {
       </div>
       <p>${escapeHtml(item.detail)}</p>
       <div class="actions-row wrap">
-        <a class="secondary-link" href="${withProjectQuery(item.page === 'outline' ? '/outline' : item.page === 'volume-outline' ? '/volume-outline' : item.page === 'chapter-plan' ? '/chapter-plan' : '/workflow', projectId)}">去处理</a>
+        <a class="secondary-link" href="${buildStepUrl(item.step, projectId)}">去处理</a>
       </div>
     </article>
   `).join('');
@@ -138,7 +237,7 @@ function renderActionsPanel(items, projectId) {
         <h3>${escapeHtml(recommended ? recommended.title : '继续推进项目')}</h3>
         <p class="muted">${escapeHtml(recommended ? recommended.detail : '没有明显阻塞项，可以继续往下生成或进行人工审读。')}</p>
         <div class="actions-row wrap">
-          <a class="primary-link" href="${withProjectQuery(recommended?.page === 'outline' ? '/outline' : recommended?.page === 'volume-outline' ? '/volume-outline' : recommended?.page === 'chapter-plan' ? '/chapter-plan' : '/workflow', projectId)}">打开主处理页面</a>
+          <a class="primary-link" href="${buildStepUrl(recommended?.step || 'workflow', projectId)}">打开主处理页面</a>
           <a class="secondary-link" href="${withProjectQuery('/workflow', projectId)}">设定与写作</a>
           <a class="secondary-link" href="${withProjectQuery('/outline', projectId)}">结构台</a>
         </div>
@@ -163,10 +262,10 @@ function renderMatrix(snapshot, projectId) {
       </div>
       <div class="review-group-grid">
         ${group.steps.map((step) => {
-          const status = getStepStatus(step, snapshot, dependencyMap, currentTasks);
-          const artifact = getArtifact(snapshot, step);
+          const selection = selectionForStep(step);
+          const status = getStepStatus(step, snapshot, dependencyMap, currentTasks, selection);
+          const artifact = getStepScopeKind(step) === 'chapter' ? getScopedArtifact(snapshot, step, selection) : getArtifact(snapshot, step);
           const deps = getStepDependencies(step, dependencyMap);
-          const link = getStepMeta(step).page === 'outline' ? '/outline' : getStepMeta(step).page === 'volume-outline' ? '/volume-outline' : getStepMeta(step).page === 'chapter-plan' ? '/chapter-plan' : '/workflow';
           return `
             <article class="review-card">
               <div class="review-card-head">
@@ -179,7 +278,7 @@ function renderMatrix(snapshot, projectId) {
               <p class="muted">依赖：${escapeHtml(deps.length ? deps.map((item) => getStepLabel(item, workflowSteps)).join(' → ') : '无')}</p>
               <p>${escapeHtml(truncate(artifact?.content || '尚未生成结果。', 120))}</p>
               <div class="actions-row wrap">
-                <a class="secondary-link" href="${withProjectQuery(link, projectId)}">打开对象</a>
+                <a class="secondary-link" href="${buildStepUrl(step, projectId)}">打开对象</a>
                 ${artifact ? `<button class="ghost danger" type="button" data-delete-artifact-key="${artifact.key}" data-artifact-title="${escapeHtml(artifact.title || getStepLabel(step, workflowSteps))}">删除产物</button>` : ''}
               </div>
             </article>
@@ -249,13 +348,10 @@ async function loadPage() {
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;
+  currentSelection = clampReviewSelection(snapshot, getReviewSelectionFromUrl());
+  syncReviewSelectionToUrl(currentSelection);
 
-  const issues = buildIssueQueue(snapshot, tasks);
-  renderSummary(snapshot, tasks);
-  renderQueueItems(issues, projectId);
-  renderActionsPanel(issues, projectId);
-  renderMatrix(snapshot, projectId);
-  renderTasks(tasks);
+  renderPage();
 }
 
 async function init() {

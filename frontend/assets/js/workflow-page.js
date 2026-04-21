@@ -302,7 +302,7 @@ function renderWorkspace() {
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!isUnlocked(step, currentSnapshot, dependencyMap)) {
+    if (!isUnlocked(step, currentSnapshot, dependencyMap, stepSelection)) {
       messageBox.hidden = false;
       messageBox.className = 'notice error';
       messageBox.textContent = '前置对象还没准备好，请先完成依赖步骤。';

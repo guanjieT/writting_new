@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from novel_agent.domain import ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError, WorkflowStep
+from novel_agent.domain import Artifact, ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError, WorkflowStep
 from novel_agent.orchestrator import NovelOrchestrator
 from novel_agent.services import AuditService, ProjectService, _artifact_key, _project_step_from_artifacts, build_artifact
 
@@ -305,6 +305,15 @@ class ScopeAndStructureTests(unittest.TestCase):
         self.assertIn(_artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 2, "chapter_index": 2}), project.artifacts)
         self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.REVISION)
 
+    def test_project_step_recovery_uses_scoped_key_prefix_when_metadata_missing(self) -> None:
+        project = self.project_service.create(ProjectInput(title="键回推项目", genre="奇幻"))
+        project.artifacts = {
+            "chapter:1:1": Artifact(key="chapter:1:1", title="章节正文", content="正文", metadata={"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+            "revision:1:1": Artifact(key="revision:1:1", title="修订", content="修订", metadata={"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+            "memory:1:1": Artifact(key="memory:1:1", title="记忆整理", content="记忆", metadata={"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+        }
+
+        self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.MEMORY)
 
 if __name__ == "__main__":
     unittest.main()
