@@ -15,6 +15,7 @@ from ..schemas import (
     StoryBibleRequest,
     TaskResponse,
 )
+from ...services import task_scope_from_payload
 
 router = APIRouter(tags=["workflow-steps"])
 
@@ -23,6 +24,7 @@ def _submit_step(container, project_id: str, step: str, payload: dict) -> TaskRe
     return container.task_service.submit(
         project_id=project_id,
         task_name=step,
+        scope=task_scope_from_payload(step, payload),
         job=lambda: container.orchestrator.dispatch(project_id, step, payload).model_dump(mode="json"),
     )
 

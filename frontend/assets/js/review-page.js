@@ -1,8 +1,9 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getArtifactForStep, getStepDependencies, getStepLabel, getStepMeta, getStepScopeKind, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getStepDependencies, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
+import { findLatestTaskForStep, getArtifactForStep, getStepStatus, isUnlocked } from './artifact-selectors.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, truncate } from './dom.js';
 import { getPageProjectId, setSelectedProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
-import { clampScopeSelection, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
+import { clampScopeSelection, getStepScopeKind, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
 
 const summary = document.getElementById('review-summary');
 const selectionPanel = document.getElementById('review-selection');
@@ -99,7 +100,7 @@ function buildIssueQueue(snapshot, tasks) {
     const step = stepDef.key;
     const selection = selectionForCurrentStep(step);
     const artifact = getArtifactForStep(snapshot, step, selection);
-    const latestTask = [...tasks].filter((task) => task.task_name === step).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+    const latestTask = findLatestTaskForStep(step, tasks, selection);
 
     if (latestTask?.status === 'failed') {
       issues.push({
@@ -154,15 +155,19 @@ function buildIssueQueue(snapshot, tasks) {
 function renderSummary(snapshot, tasks) {
   const project = snapshot.project;
   const artifactCount = Object.keys(snapshot.artifacts || {}).length;
+  const visibleArtifactCount = workflowSteps.filter((step) => Boolean(getArtifactForStep(snapshot, step, selectionForCurrentStep(step)))).length;
   const failedTasks = tasks.filter((task) => task.status === 'failed').length;
   const pendingTasks = tasks.filter((task) => task.status === 'pending' || task.status === 'running').length;
+  const missingContextCount = workflowSteps.filter((step) => !getArtifactForStep(snapshot, step, selectionForCurrentStep(step))).length;
 
   summary.innerHTML = `
     <div class="stats-grid">
-      <article class="stat-card"><div class="stat-number">${escapeHtml(artifactCount)}</div><div class="muted">已产出对象</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(workflowSteps.length)}</div><div class="muted">唯一步骤总数</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(artifactCount)}</div><div class="muted">实际 artifact 总数</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(visibleArtifactCount)}</div><div class="muted">当前上下文已产出</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(failedTasks)}</div><div class="muted">失败任务</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(pendingTasks)}</div><div class="muted">执行中任务</div></article>
-      <article class="stat-card"><div class="stat-number">${escapeHtml(workflowSteps.length - artifactCount)}</div><div class="muted">尚未产出的对象</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(missingContextCount)}</div><div class="muted">当前上下文缺失对象数</div></article>
     </div>
     <div class="context-card">
       <div class="context-head">
@@ -298,6 +303,7 @@ function renderTasks(tasks) {
         ${badge(task.task_name, 'soft')}
         ${badge(task.task_id, 'soft')}
       </div>
+      <div class="muted">范围：${escapeHtml(task.scope_kind || 'project')}${task.volume_index ? ` · 第 ${escapeHtml(task.volume_index)} 卷` : ''}${task.chapter_index ? ` · 第 ${escapeHtml(task.chapter_index)} 章` : ''}</div>
       <div class="muted">创建于 ${escapeHtml(formatDate(task.created_at))}</div>
       <div class="muted">开始 ${escapeHtml(formatDate(task.started_at))} · 结束 ${escapeHtml(formatDate(task.finished_at))}</div>
       ${task.error ? `<div class="notice error">${escapeHtml(task.error)}</div>` : ''}

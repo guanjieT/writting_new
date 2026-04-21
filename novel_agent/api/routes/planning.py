@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from ...domain import TaskRecord
+from ...services import task_scope_from_payload
 from ..deps import get_container
 from ..schemas import ChapterPlanRequest, RoughChapterPlanRequest, RoughVolumeOutlineRequest, TaskResponse, VolumeOutlineRequest
 
@@ -13,6 +14,7 @@ def _submit_step(container, project_id: str, step: str, payload: dict) -> TaskRe
     return container.task_service.submit(
         project_id=project_id,
         task_name=step,
+        scope=task_scope_from_payload(step, payload),
         job=lambda: container.orchestrator.dispatch(project_id, step, payload).model_dump(mode="json"),
     )
 

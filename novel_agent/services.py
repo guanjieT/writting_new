@@ -55,6 +55,19 @@ def _artifact_scope_payload(step_key: str, payload: Mapping[str, Any]) -> dict[s
     return {"scope_kind": "project"}
 
 
+def task_scope_from_payload(step_key: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    scope_kind = _artifact_scope_kind(step_key)
+    if scope_kind == "volume":
+        return {"scope_kind": scope_kind, "volume_index": max(int(payload.get("volume_index") or 1), 1)}
+    if scope_kind == "chapter":
+        return {
+            "scope_kind": scope_kind,
+            "volume_index": max(int(payload.get("volume_index") or 1), 1),
+            "chapter_index": max(int(payload.get("chapter_index") or 1), 1),
+        }
+    return {"scope_kind": "project"}
+
+
 def _artifact_key(step_key: str, scope_payload: Mapping[str, Any]) -> str:
     scope_kind = scope_payload.get("scope_kind", "project")
     if scope_kind == "volume":
@@ -276,8 +289,10 @@ class TaskService:
         project_id: str,
         task_name: str,
         job: Callable[[], Any],
+        *,
+        scope: dict[str, Any] | None = None,
     ) -> TaskRecord:
-        task = self.store.create(TaskRecord(project_id=project_id, task_name=task_name))
+        task = self.store.create(TaskRecord(project_id=project_id, task_name=task_name, **(scope or {})))
 
         def runner() -> Any:
             task.started_at = utc_now()

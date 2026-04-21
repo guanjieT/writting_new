@@ -162,6 +162,9 @@ class TaskRecord(BaseModel):
     task_id: str = Field(default_factory=lambda: new_id("task"))
     project_id: str
     task_name: str
+    scope_kind: str = "project"
+    volume_index: int | None = None
+    chapter_index: int | None = None
     status: TaskStatus = TaskStatus.PENDING
     created_at: datetime = Field(default_factory=utc_now)
     started_at: datetime | None = None

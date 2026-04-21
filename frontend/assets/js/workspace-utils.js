@@ -1,8 +1,11 @@
 import { api } from './api-client.js';
 import { waitForTask } from './api-client.js';
 import { badge, escapeHtml, formatDate, renderJsonPreview, truncate } from './dom.js';
-import { extractChapterPlanDefaults, extractVolumeOutlineDefaults, getArtifact, getArtifactForStep, getScopedArtifact, getStepDependencies, getStepMeta, getStepLabel, getStepScopeKind, getStepStatus, serializeStepPayload } from './app-config.js';
-import { dependencySelectionFor, normalizeScopeSelection } from './scope-utils.js';
+import { getArtifact, getArtifactForStep, getScopedArtifact, getStepDependencies, getStepLabel, getStepStatus } from './artifact-selectors.js';
+import { getStepMeta } from './step-meta.js';
+import { extractChapterPlanDefaults, extractVolumeOutlineDefaults } from './planning-defaults.js';
+import { dependencySelectionFor, normalizeScopeSelection, getStepScopeKind } from './scope-utils.js';
+import { serializeStepPayload } from './app-config.js';
 
 export function renderField(field, value) {
   const safeValue = value ?? '';

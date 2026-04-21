@@ -15,6 +15,14 @@ function parsePositiveInt(value, fallback = 1) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
+function parsePositiveIntOrNull(value) {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+}
+
 export function getStepScopeKind(step) {
   return STEP_SCOPE_KIND[step] || 'project';
 }
@@ -111,4 +119,31 @@ export function dependencySelectionFor(step, dependency, selection = {}) {
     return { volumeIndex: normalized.volumeIndex, chapterIndex: normalized.chapterIndex };
   }
   return {};
+}
+
+export function normalizeTaskScope(task = {}) {
+  const metadata = task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+  const scopeKind = String(task.scope_kind || metadata.scope_kind || 'project');
+  return {
+    scopeKind,
+    volumeIndex: parsePositiveIntOrNull(task.volume_index ?? metadata.volume_index),
+    chapterIndex: parsePositiveIntOrNull(task.chapter_index ?? metadata.chapter_index),
+  };
+}
+
+export function taskMatchesStepSelection(task, step, selection = {}) {
+  const scopeKind = getStepScopeKind(step);
+  const taskScope = normalizeTaskScope(task);
+  if (scopeKind === 'project') {
+    return taskScope.scopeKind === 'project';
+  }
+
+  const normalized = normalizeScopeSelection(selection);
+  if (scopeKind === 'volume') {
+    return taskScope.scopeKind === 'volume' && taskScope.volumeIndex === normalized.volumeIndex;
+  }
+  if (scopeKind === 'chapter') {
+    return taskScope.scopeKind === 'chapter' && taskScope.volumeIndex === normalized.volumeIndex && taskScope.chapterIndex === normalized.chapterIndex;
+  }
+  return false;
 }

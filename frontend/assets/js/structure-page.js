@@ -1,5 +1,8 @@
 import { api } from './api-client.js';
-import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, extractRoughChapterPlanChapterCount, extractVolumeOutlineDefaults, getArtifactForStep, getFieldDisplayValue, getStepLabel, getStepMeta, getStepStatus, isUnlocked, loadWorkflowContext } from './app-config.js';
+import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
+import { getArtifactForStep, getStepStatus, isUnlocked } from './artifact-selectors.js';
+import { getFieldDisplayValue } from './planning-defaults.js';
+import { extractRoughChapterPlanChapterCount, extractVolumeOutlineDefaults } from './structured-parsers.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderDependencyList, renderField, renderStageOverview, renderTaskList, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
