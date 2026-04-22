@@ -1,10 +1,10 @@
 import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
-import { getArtifactForStep, getStepStatus, getTasksForStepSelection, isUnlocked } from './artifact-selectors.js';
+import { getArtifactForStep, getStepReadinessMessage, getStepStatus, getTasksForStepSelection, isUnlocked } from './artifact-selectors.js';
 import { getFieldDisplayValue, inferChapterCountForVolume } from './planning-defaults.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, getPreferredStep, setPreferredStep, setSelectedProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
-import { deleteStepArtifact, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderChecklist, renderDependencyList, renderStageOverview, renderTaskList, renderField, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
+import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderChecklist, renderDependencyList, renderStageOverview, renderTaskList, renderField, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
 import { clampScopeSelection, getStepScopeKind, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
 
 const projectMini = document.getElementById('workflow-project-mini');
@@ -167,10 +167,17 @@ function buildStepForm(step, selection) {
   const meta = getStepMeta(step);
   const project = currentSnapshot?.project;
   const fields = meta.fields || [];
+  const fieldKeys = new Set(fields.map((field) => field.key));
   const primaryFields = fields.filter((field) => !field.advanced).map((field) => ({ ...field, stepKey: step }));
   const advancedFields = fields.filter((field) => field.advanced).map((field) => ({ ...field, stepKey: step }));
   const scopeKind = getStepScopeKind(step);
   const scopedArtifact = getArtifactForStep(currentSnapshot, step, selectionForStep(step, selection));
+  const unlocked = isUnlocked(step, currentSnapshot, dependencyMap, selection);
+  const readinessMessage = getStepReadinessMessage(step, currentSnapshot, dependencyMap, selection);
+  const hiddenScopeInputs = [
+    scopeKind !== 'project' && !fieldKeys.has('volume_index') ? `<input type="hidden" name="volume_index" value="${selection.volumeIndex}" />` : '',
+    scopeKind === 'chapter' && !fieldKeys.has('chapter_index') ? `<input type="hidden" name="chapter_index" value="${selection.chapterIndex}" />` : '',
+  ].join('');
 
   return `
     <form class="workspace-form" data-step-form="${step}">
@@ -185,15 +192,13 @@ function buildStepForm(step, selection) {
           </div>
         </details>
       ` : ''}
-      ${scopeKind === 'chapter' && step !== 'chapter' ? `
-        <input type="hidden" name="volume_index" value="${selection.volumeIndex}" />
-        <input type="hidden" name="chapter_index" value="${selection.chapterIndex}" />
-      ` : ''}
+      ${hiddenScopeInputs}
       <div class="actions-row wrap">
-        <button class="primary" type="submit" data-run-step="${step}">${isUnlocked(step, currentSnapshot, dependencyMap, selection) ? '执行当前对象' : '等待前置完成'}</button>
+        <button class="primary" type="submit" data-run-step="${step}" ${unlocked ? '' : 'disabled'} title="${escapeHtml(readinessMessage)}">${unlocked ? '执行当前对象' : '等待前置完成'}</button>
         <button class="ghost" type="button" data-delete-step="${step}" ${scopedArtifact ? '' : 'disabled'}>删除当前产物</button>
         <span class="muted">删除会级联清理依赖此对象的下游内容。</span>
       </div>
+      ${unlocked ? '' : `<div class="notice warn">${escapeHtml(readinessMessage)}</div>`}
       <div class="notice info" data-step-message hidden></div>
     </form>
   `;
@@ -238,6 +243,12 @@ function renderWorkspace() {
 
   if (step === 'volume_outline') {
     hydrateVolumeOutlineDefaults(form, currentSnapshot);
+  }
+  if (step === 'rough_chapter_plan') {
+    hydrateRoughChapterPlanDefaults(form, currentSnapshot);
+  }
+  if (step === 'chapter_plan') {
+    hydrateChapterPlanDefaults(form, currentSnapshot);
   }
 
   form.querySelectorAll('[name="volume_index"], [name="chapter_index"]').forEach((control) => {
@@ -285,7 +296,7 @@ function renderWorkspace() {
     if (!isUnlocked(step, currentSnapshot, dependencyMap, stepSelection)) {
       messageBox.hidden = false;
       messageBox.className = 'notice error';
-      messageBox.textContent = '前置对象还没准备好，请先完成依赖步骤。';
+      messageBox.textContent = getStepReadinessMessage(step, currentSnapshot, dependencyMap, stepSelection) || '前置对象还没准备好，请先完成依赖步骤。';
       return;
     }
     runButton.disabled = true;

@@ -7,7 +7,7 @@
 1. 项目中心保存长期作品基础设定，数据模型见 [novel_agent/domain.py](../novel_agent/domain.py).
 2. 页面进入时，前端通过 `project_id` 从本地存储或 URL 读取当前项目，见 [frontend/assets/js/state.js](../frontend/assets/js/state.js).
 3. 项目中心表单提交时，前端把当前输入写回项目对象并调用 `POST /projects` 或 `PUT /projects/{project_id}`，见 [frontend/assets/js/index-page.js](../frontend/assets/js/index-page.js).
-4. 步骤页面提交时，前端先把当前表单序列化为 payload，再调用对应后端接口，见 [frontend/assets/js/app-config.js](../frontend/assets/js/app-config.js) 和 [frontend/assets/js/workspace-utils.js](../frontend/assets/js/workspace-utils.js).
+4. 步骤页面提交时，前端先把当前表单序列化为 payload，再调用对应后端接口，见 [frontend/assets/js/step-meta.js](../frontend/assets/js/step-meta.js) 和 [frontend/assets/js/workspace-utils.js](../frontend/assets/js/workspace-utils.js).
 5. 后端路由接收 payload 后，把它交给 orchestrator 或 AI 补全接口，再由 agent 或 prompt 模板消费，见 [novel_agent/api/routes/workflow_steps.py](../novel_agent/api/routes/workflow_steps.py)、[novel_agent/api/routes/planning.py](../novel_agent/api/routes/planning.py) 与 [novel_agent/infrastructure.py](../novel_agent/infrastructure.py).
 6. 生成链路中的上下文组装统一收敛到 [novel_agent/context_builder.py](../novel_agent/context_builder.py)，避免在 agent、路由和模板里重复维护上下文筛选规则。
 
@@ -129,7 +129,7 @@
 
 ## 审计检查点
 
-1. 修改步骤字段时，先确认 [frontend/assets/js/app-config.js](../frontend/assets/js/app-config.js) 的字段定义，再确认对应的 `BaseModel`。
+1. 修改步骤字段时，先确认 [frontend/assets/js/step-meta.js](../frontend/assets/js/step-meta.js) 的字段定义，再确认对应的 `BaseModel`。
 2. 如果字段来自项目中心，先检查 `renderInputValue()` 是否做了项目级回填。
 3. 如果字段来自当前步骤，先检查 `serializeStepPayload()` 是否把字段纳入 payload。
 4. 如果生成结果缺少某个值，先检查 prompt 模板是否真的接到了该字段，而不是直接假设前端没传。

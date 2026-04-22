@@ -50,6 +50,7 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
         project_service=project_service,
         audit_service=audit_service,
         agent_dependencies=AgentDependencies(prompt_service=prompt_service, llm_service=llm_service),
+        task_service=task_service,
     )
 
     return AppContainer(

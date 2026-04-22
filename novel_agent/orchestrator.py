@@ -7,7 +7,7 @@ from typing import Any
 from .agents import AgentDependencies, BaseAgent, build_agent_registry
 from .domain import AgentOutput, Artifact, NovelProject, UnsupportedStepError, WorkflowOrderError, WorkflowStep
 from .workflow_spec import workflow_dependency_map
-from .services import AuditService, ProjectService, agent_context, _artifact_scope_payload, _scope_matches
+from .services import AuditService, ProjectService, TaskService, agent_context, _artifact_scope_payload, _scope_matches
 
 
 def _to_chinese_number(value: int) -> str:
@@ -56,14 +56,22 @@ class NovelOrchestrator:
     audit_service: AuditService
     agent_dependencies: AgentDependencies
     agents: dict[str, BaseAgent]
+    task_service: TaskService | None = None
 
     @classmethod
-    def build(cls, project_service: ProjectService, audit_service: AuditService, agent_dependencies: AgentDependencies) -> "NovelOrchestrator":
+    def build(
+        cls,
+        project_service: ProjectService,
+        audit_service: AuditService,
+        agent_dependencies: AgentDependencies,
+        task_service: TaskService | None = None,
+    ) -> "NovelOrchestrator":
         return cls(
             project_service=project_service,
             audit_service=audit_service,
             agent_dependencies=agent_dependencies,
             agents=build_agent_registry(),
+            task_service=task_service,
         )
 
     def get_project(self, project_id: str) -> NovelProject:
@@ -100,12 +108,13 @@ class NovelOrchestrator:
         project.input = project_input
         if project.artifacts:
             project.artifacts.clear()
-            project.touch(WorkflowStep.CREATED)
+        project.touch(WorkflowStep.CREATED)
+        removed_task_count = self.task_service.delete_project(project_id) if self.task_service is not None else 0
         self.project_service.save(project)
         self.audit_service.record(
             action="project.updated",
             project_id=project_id,
-            payload={"title": project.input.title, "genre": project.input.genre},
+            payload={"title": project.input.title, "genre": project.input.genre, "removed_task_count": removed_task_count},
         )
         return project
 

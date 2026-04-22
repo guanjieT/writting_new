@@ -119,18 +119,24 @@ class ChapterRequest(GenerationBaseRequest):
 
 
 class RevisionRequest(GenerationBaseRequest):
+    volume_index: int = 1
+    chapter_index: int = 1
     target_artifact: str = ""
     instruction: str = ""
     focus_areas: list[str] = Field(default_factory=list)
 
 
 class ConsistencyRequest(GenerationBaseRequest):
+    volume_index: int = 1
+    chapter_index: int = 1
     scope: str = "project"
     known_rules: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
 class MemoryRequest(GenerationBaseRequest):
+    volume_index: int = 1
+    chapter_index: int = 1
     query: str = ""
     top_k: int = 5
     notes: list[str] = Field(default_factory=list)

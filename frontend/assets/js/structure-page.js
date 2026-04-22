@@ -1,6 +1,6 @@
 import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
-import { getArtifactForStep, getStepStatus, getTasksForSelection, isUnlocked } from './artifact-selectors.js';
+import { getArtifactForStep, getStepReadinessMessage, getStepStatus, getTasksForSelection, isUnlocked } from './artifact-selectors.js';
 import { getFieldDisplayValue, inferChapterCountForVolume } from './planning-defaults.js';
 import { badge, escapeHtml, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, syncProjectId, syncTopNavLinks } from './state.js';
@@ -197,6 +197,7 @@ function renderStepCard(step, selection) {
   const status = getStepStatus(step, currentSnapshot, dependencyMap, currentTasks, stepSelection);
   const artifact = getArtifactForStep(currentSnapshot, step, stepSelection);
   const unlocked = isUnlocked(step, currentSnapshot, dependencyMap, stepSelection);
+  const readinessMessage = getStepReadinessMessage(step, currentSnapshot, dependencyMap, stepSelection);
   const fields = (meta.fields || []).map((field) => ({ ...field, stepKey: step }));
   const primaryFields = fields.filter((field) => !field.advanced);
   const advancedFields = fields.filter((field) => field.advanced);
@@ -226,9 +227,10 @@ function renderStepCard(step, selection) {
               </details>
             ` : ''}
             <div class="actions-row wrap">
-              <button class="primary" type="submit" ${unlocked ? '' : 'disabled'}>${unlocked ? actionLabel(step, artifact) : '等待前置完成'}</button>
+              <button class="primary" type="submit" ${unlocked ? '' : 'disabled'} title="${escapeHtml(readinessMessage)}">${unlocked ? actionLabel(step, artifact) : '等待前置完成'}</button>
               <button class="ghost" type="button" data-delete-step="${step}" ${artifact ? '' : 'disabled'}>删除当前产物</button>
             </div>
+            ${unlocked ? '' : `<div class="notice warn">${escapeHtml(readinessMessage)}</div>`}
             <div class="notice info" data-step-message hidden></div>
           </form>
         </div>
@@ -303,6 +305,12 @@ function renderWorkspace(selection) {
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (!isUnlocked(step, currentSnapshot, dependencyMap, stepSelection)) {
+        messageBox.hidden = false;
+        messageBox.className = 'notice error';
+        messageBox.textContent = getStepReadinessMessage(step, currentSnapshot, dependencyMap, stepSelection) || '前置对象还没准备好，请先完成依赖步骤。';
+        return;
+      }
       try {
         await runStepFromForm({
           projectId: currentSnapshot.project.project_id,

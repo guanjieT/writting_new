@@ -238,7 +238,10 @@ export const STEP_META = {
 export const PAGE_STEP_GROUPS = {
   workflow: [
     { key: 'setting', label: '设定资产', steps: ['requirements', 'story_bible', 'characters'] },
-    { key: 'writing', label: '正文推进', steps: ['chapter', 'revision', 'consistency', 'memory'] },
+    { key: 'structure-outline', label: '全书结构', steps: ['outline', 'rough_volume_outline'] },
+    { key: 'structure-volume', label: '卷级结构', steps: ['volume_outline', 'rough_chapter_plan'] },
+    { key: 'structure-chapter', label: '章节结构', steps: ['chapter_plan'] },
+    { key: 'writing', label: '正文与审查', steps: ['chapter', 'revision', 'consistency', 'memory'] },
   ],
   outline: [
     { key: 'structure', label: '全书结构', steps: ['outline', 'rough_volume_outline'] },

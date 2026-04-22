@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from novel_agent.agents import BaseAgent, ChapterAgent
-from novel_agent.domain import AgentContext, Artifact, ArtifactSummary, NovelProject, ProjectInput, WorkflowOrderError, WorkflowStep
-from novel_agent.infrastructure import FilePromptStore
+from novel_agent.domain import AgentContext, Artifact, ArtifactSummary, NovelProject, ProjectInput, TaskRecord, WorkflowOrderError, WorkflowStep
+from novel_agent.infrastructure import FilePromptStore, MemoryTaskStore
 from novel_agent.orchestrator import NovelOrchestrator
-from novel_agent.services import AuditService, ProjectService, _artifact_key, _project_step_from_artifacts, build_artifact
+from novel_agent.services import AuditService, ProjectService, TaskService, _artifact_key, _project_step_from_artifacts, build_artifact
 
 
 class MemoryProjectRepository:
@@ -327,6 +328,43 @@ class ScopeAndStructureTests(unittest.TestCase):
         }
 
         self.assertEqual(_project_step_from_artifacts(project.artifacts), WorkflowStep.CHAPTER)
+
+    def test_stale_dependency_blocks_downstream_step(self) -> None:
+        chapter_plan = build_artifact(
+            _artifact_key("chapter_plan", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+            "章节计划",
+            "旧计划",
+            summary=ArtifactSummary(),
+            step="chapter_plan",
+            scope_kind="chapter",
+            volume_index=1,
+            chapter_index=1,
+            stale=True,
+            state="stale",
+        )
+        self.project_service.register_generated_artifact(self.project.project_id, chapter_plan)
+
+        with self.assertRaises(WorkflowOrderError):
+            self.orchestrator._ensure_step_ready(self.project_service.get(self.project.project_id), "chapter", {"volume_index": 1, "chapter_index": 1})
+
+    def test_update_project_clears_artifacts_and_old_tasks(self) -> None:
+        task_store = MemoryTaskStore()
+        task_service = TaskService(task_store, ThreadPoolExecutor(max_workers=1))
+        task_store.create(TaskRecord(project_id=self.project.project_id, task_name="requirements"))
+        self.orchestrator.task_service = task_service
+        self.project_service.register_generated_artifact(
+            self.project.project_id,
+            build_artifact("requirements", "需求", "旧需求", summary=ArtifactSummary(), step="requirements", scope_kind="project"),
+        )
+
+        updated = self.orchestrator.update_project(
+            self.project.project_id,
+            ProjectInput(title="新设定", genre="科幻", target_volume_count=1, target_chapters_per_volume=2),
+        )
+
+        self.assertEqual(updated.current_step, WorkflowStep.CREATED)
+        self.assertEqual(updated.artifacts, {})
+        self.assertEqual(task_service.list(self.project.project_id), [])
 
     def test_rough_chapter_plan_generation_infers_missing_chapter_indices(self) -> None:
         agent = BaseAgent("rough_chapter_plan", WorkflowStep.ROUGH_CHAPTER_PLAN, "rough_chapter_plan", "rough_chapter_plan", "粗章纲")

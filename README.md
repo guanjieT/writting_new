@@ -9,7 +9,7 @@
 
 代码语法最低需要 Python 3.10；当前机器如果没有 3.10+，可以先创建虚拟环境，但正式运行仍建议切到 3.10 或更高版本。
 
-前端已经按多页面方式拆分完成，浏览器入口分别是 `/`、`/workflow`、`/outline`、`/volume-outline`、`/chapter-plan` 和 `/review`。项目中心负责创建、选择和编辑项目基础设定，编辑后会清空依赖产物并回到起点；工作流页负责按模块执行生成步骤，总纲页只管总纲和全书粗卷纲，卷纲页只管当前卷的完整卷纲和粗章纲，章节计划页只管当前章的完整章节计划，审查页负责查看产物与任务状态。页面之间会通过 `project_id` 和本地存储保持当前项目，不会在切页时丢失选择。工作流页与结构页里的参数字段都提供了字段级 `AI 补全` 按钮，可以在不重跑整步的前提下先补齐局部输入；补全请求会同时带上当前字段、同阶段表单约束和直接上游产物，例如角色框架里的 `role_capacity` 会进入 `core_roles` 和 `role_slots` 的补全上下文。现在每个 artifact 都会同时保存完整正文和结构化摘要，规划类产物已经改成固定结构输出，`content` 只保留摘要，结构化字段才是主体数据。总纲输出 `story_arcs`、`global_goals`、`main_conflicts`、`ending_direction`、`volume_plan_hints`；粗卷纲输出 `volumes`；卷纲输出 `volume_index`、`title`、`summary`、`goal`、`main_conflict`、`ending_hook`、`target_chapter_count`、`target_words`、`arc_segments`；粗章纲默认一次性生成整卷全部章节的 `chapters`，并用 `total_target_chapters` 做全卷校验；章节计划输出 `title`、`summary`、`chapter_type`、`pov_character`、`main_event`、`conflict`、`hook`、`target_words`、`min_words`、`characters`、`introduced_characters`、`scene_summaries`、`continuity_notes`、`writing_notes`。总纲拆成了 `总纲 -> 粗卷纲 -> 完整卷纲 -> 粗章纲 -> 完整章节计划` 的五段式锁式流水线，不再使用 `confirmed` 作为粗细切换开关。总纲、卷纲、章节计划和章节正文现在分别使用不同的上下文档位：总纲只读项目简报和上游核心摘要，卷纲读总纲摘要和当前卷约束，章节计划读卷纲摘要与相关设定摘要，章节正文读章节计划摘要和写作约束，避免把整份项目数据重复灌进 prompt。总纲页的 `chapters_per_volume` 现在会作为硬性目标传入生成流程，生成的每卷章节数不应再回落到默认 12。需求分析页会自动回填项目中心的 `premise -> requirements_text`、`target_audience -> audience`，并把项目约束合并到补充说明中；总纲页会自动回填 `outline_focus -> focus_points`，一致性页会把项目规则合并到 `known_rules`，让项目中心输入能更直接地进入步骤表单。
+前端已经按多页面方式拆分完成，浏览器入口分别是 `/`、`/workflow`、`/outline`、`/volume-outline`、`/chapter-plan` 和 `/review`。项目中心负责创建、选择和编辑项目基础设定，编辑后会清空依赖产物、旧任务并回到起点；工作流页展示完整主链路并可按模块执行生成步骤，总纲页只管总纲和全书粗卷纲，卷纲页只管当前卷的完整卷纲和粗章纲，章节计划页只管当前章的完整章节计划，审查页负责查看产物与任务状态。页面之间会通过 `project_id` 和本地存储保持当前项目，不会在切页时丢失选择。工作流页与结构页里的参数字段都提供了字段级 `AI 补全` 按钮，可以在不重跑整步的前提下先补齐局部输入；补全请求会同时带上当前字段、同阶段表单约束和直接上游产物，例如角色框架里的 `role_capacity` 会进入 `core_roles` 和 `role_slots` 的补全上下文。现在每个 artifact 都会同时保存完整正文和结构化摘要，规划类产物已经改成固定结构输出，`content` 只保留摘要，结构化字段才是主体数据。总纲输出 `story_arcs`、`global_goals`、`main_conflicts`、`ending_direction`、`volume_plan_hints`；粗卷纲输出 `volumes`；卷纲输出 `volume_index`、`title`、`summary`、`goal`、`main_conflict`、`ending_hook`、`target_chapter_count`、`target_words`、`arc_segments`；粗章纲默认一次性生成整卷全部章节的 `chapters`，并用 `total_target_chapters` 做全卷校验；章节计划输出 `title`、`summary`、`chapter_type`、`pov_character`、`main_event`、`conflict`、`hook`、`target_words`、`min_words`、`characters`、`introduced_characters`、`scene_summaries`、`continuity_notes`、`writing_notes`。总纲拆成了 `总纲 -> 粗卷纲 -> 完整卷纲 -> 粗章纲 -> 完整章节计划` 的五段式锁式流水线，不再使用 `confirmed` 作为粗细切换开关。总纲、卷纲、章节计划和章节正文现在分别使用不同的上下文档位：总纲只读项目简报和上游核心摘要，卷纲读总纲摘要和当前卷约束，章节计划读卷纲摘要与相关设定摘要，章节正文读章节计划摘要和写作约束，避免把整份项目数据重复灌进 prompt。总纲页的 `chapters_per_volume` 现在会作为硬性目标传入生成流程，生成的每卷章节数不应再回落到默认 12。需求分析页会自动回填项目中心的 `premise -> requirements_text`、`target_audience -> audience`，并把项目约束合并到补充说明中；总纲页会自动回填 `outline_focus -> focus_points`，一致性页会把项目规则合并到 `known_rules`，让项目中心输入能更直接地进入步骤表单。
 
 参数映射与传递审计文档见 [docs/parameter-flow-audit.md](docs/parameter-flow-audit.md)。
 
@@ -74,6 +74,29 @@ uvicorn novel_agent.main:app --reload --host 127.0.0.1 --port 8001
 novel_agent_clean/
 ├── pyproject.toml
 ├── README.md
+├── frontend/
+│   ├── index.html
+│   ├── workflow.html
+│   ├── outline.html
+│   ├── volume-outline.html
+│   ├── chapter-plan.html
+│   ├── review.html
+│   └── assets/
+│       ├── styles.css
+│       └── js/
+│           ├── api-client.js
+│           ├── artifact-selectors.js
+│           ├── dom.js
+│           ├── index-page.js
+│           ├── planning-defaults.js
+│           ├── review-page.js
+│           ├── scope-utils.js
+│           ├── state.js
+│           ├── step-meta.js
+│           ├── structure-page.js
+│           ├── structured-parsers.js
+│           ├── workspace-utils.js
+│           └── workflow-page.js
 └── novel_agent/
     ├── __init__.py
     ├── api/
@@ -84,26 +107,9 @@ novel_agent_clean/
     │       ├── health.py
     │       ├── frontend.py
     │       ├── projects.py
-  │       ├── workflow_steps.py
-  │       ├── planning.py
-  │       └── workflow.py
-    ├── frontend/
-    │   ├── index.html
-    │   ├── workflow.html
-    │   ├── outline.html
-    │   ├── volume-outline.html
-    │   ├── chapter-plan.html
-    │   ├── review.html
-    │   └── assets/
-    │       ├── styles.css
-    │       └── js/
-    │           ├── api-client.js
-    │           ├── dom.js
-    │           ├── index-page.js
-    │           ├── review-page.js
-    │           ├── state.js
-    │           ├── structure-page.js
-    │           └── workflow-page.js
+    │       ├── workflow_steps.py
+    │       ├── planning.py
+    │       └── workflow.py
     ├── agents.py
     ├── config.py
     ├── container.py
@@ -138,18 +144,22 @@ novel_agent_clean/
 | [novel_agent/api/routes/ai.py](novel_agent/api/routes/ai.py) | 字段级 AI 补全接口 | `POST /projects/{project_id}/field-completion` |
 | [novel_agent/api/routes/planning.py](novel_agent/api/routes/planning.py) | 卷纲与章节计划入口 | `POST /projects/{project_id}/rough-volume-outline`、`POST /projects/{project_id}/volume-outline`、`POST /projects/{project_id}/rough-chapter-plan`、`POST /projects/{project_id}/chapter-plan` |
 | [novel_agent/api/routes/workflow_steps.py](novel_agent/api/routes/workflow_steps.py) | 基础步骤入口和任务查询 | `POST /projects/{project_id}/requirements`、`story-bible`、`characters`、`outline`、`chapters`、`revision`、`consistency`、`memory`、`GET /projects/{project_id}/tasks`、`GET /tasks/{task_id}`、`POST /tasks/{task_id}/cancel` |
-| [novel_agent/frontend/index.html](novel_agent/frontend/index.html) | 项目中心页面 | 创建项目、选择项目、进入工作流 |
-| [novel_agent/frontend/workflow.html](novel_agent/frontend/workflow.html) | 顺序工作流页面 | 按步骤提交生成任务、自动轮询任务结果 |
-| [novel_agent/frontend/outline.html](novel_agent/frontend/outline.html) | 总纲页面 | 聚焦总纲和全书粗卷纲 |
-| [novel_agent/frontend/volume-outline.html](novel_agent/frontend/volume-outline.html) | 卷纲页面 | 聚焦当前卷的完整卷纲和粗章纲 |
-| [novel_agent/frontend/chapter-plan.html](novel_agent/frontend/chapter-plan.html) | 章节计划页面 | 聚焦当前章的完整章节计划 |
-| [novel_agent/frontend/review.html](novel_agent/frontend/review.html) | 审查面板页面 | 查看任务、产物、快照 |
-| [novel_agent/frontend/assets/js/api-client.js](novel_agent/frontend/assets/js/api-client.js) | 前端 API 适配层 | `requestJson()`、`api.*`、`waitForTask()` |
-| [novel_agent/frontend/assets/js/state.js](novel_agent/frontend/assets/js/state.js) | 前端状态与参数转换 | `getSelectedProjectId()`、`setSelectedProjectId()`、`listFromText()` |
-| [novel_agent/frontend/assets/js/dom.js](novel_agent/frontend/assets/js/dom.js) | DOM 渲染辅助 | `escapeHtml()`、`renderNotice()`、`renderEmpty()` |
-| [novel_agent/frontend/assets/js/index-page.js](novel_agent/frontend/assets/js/index-page.js) | 项目中心逻辑 | 创建与选择项目 |
-| [novel_agent/frontend/assets/js/workflow-page.js](novel_agent/frontend/assets/js/workflow-page.js) | 顺序执行逻辑 | 步骤解锁、任务提交、轮询刷新 |
-| [novel_agent/frontend/assets/js/review-page.js](novel_agent/frontend/assets/js/review-page.js) | 审查视图逻辑 | 快照、任务、产物展示 |
+| [frontend/index.html](frontend/index.html) | 项目中心页面 | 创建项目、选择项目、进入工作流 |
+| [frontend/workflow.html](frontend/workflow.html) | 主工作流页面 | 展示完整主链路、按步骤提交生成任务、自动轮询任务结果 |
+| [frontend/outline.html](frontend/outline.html) | 总纲页面 | 聚焦总纲和全书粗卷纲 |
+| [frontend/volume-outline.html](frontend/volume-outline.html) | 卷纲页面 | 聚焦当前卷的完整卷纲和粗章纲 |
+| [frontend/chapter-plan.html](frontend/chapter-plan.html) | 章节计划页面 | 聚焦当前章的完整章节计划 |
+| [frontend/review.html](frontend/review.html) | 审查面板页面 | 查看任务、产物、快照 |
+| [frontend/assets/js/api-client.js](frontend/assets/js/api-client.js) | 前端 API 适配层 | `requestJson()`、`api.*`、`waitForTask()` |
+| [frontend/assets/js/artifact-selectors.js](frontend/assets/js/artifact-selectors.js) | 前端产物与依赖选择 | `getArtifactForStep()`、`getStepReadiness()`、`isUnlocked()` |
+| [frontend/assets/js/state.js](frontend/assets/js/state.js) | 前端状态与参数转换 | `getSelectedProjectId()`、`setSelectedProjectId()`、`listFromText()` |
+| [frontend/assets/js/dom.js](frontend/assets/js/dom.js) | DOM 渲染辅助 | `escapeHtml()`、`renderNotice()`、`renderEmpty()` |
+| [frontend/assets/js/index-page.js](frontend/assets/js/index-page.js) | 项目中心逻辑 | 创建与选择项目 |
+| [frontend/assets/js/step-meta.js](frontend/assets/js/step-meta.js) | 前端步骤字段与分组元数据 | `STEP_META`、`PAGE_STEP_GROUPS`、`getStepMeta()` |
+| [frontend/assets/js/workspace-utils.js](frontend/assets/js/workspace-utils.js) | 工作区通用表单与产物渲染 | `renderField()`、`renderDependencyList()`、`runStepFromForm()` |
+| [frontend/assets/js/workflow-page.js](frontend/assets/js/workflow-page.js) | 主工作流逻辑 | 步骤解锁、任务提交、轮询刷新 |
+| [frontend/assets/js/structure-page.js](frontend/assets/js/structure-page.js) | 结构页逻辑 | 总纲、卷纲、章节计划页面复用渲染 |
+| [frontend/assets/js/review-page.js](frontend/assets/js/review-page.js) | 审查视图逻辑 | 快照、任务、产物展示 |
 | [novel_agent/main.py](novel_agent/main.py) | 运行入口 | `app`、`create_app()` |
 
 ## 公开函数与参数
@@ -369,6 +379,8 @@ novel_agent_clean/
 
 `POST /projects/{project_id}/revision`
 
+- `volume_index: number`
+- `chapter_index: number`
 - `target_artifact: string`
 - `instruction: string`
 - `focus_areas: string[]`
@@ -379,6 +391,8 @@ novel_agent_clean/
 
 `POST /projects/{project_id}/consistency`
 
+- `volume_index: number`
+- `chapter_index: number`
 - `scope: string`
 - `known_rules: string[]`
 - `notes: string[]`
@@ -389,6 +403,8 @@ novel_agent_clean/
 
 `POST /projects/{project_id}/memory`
 
+- `volume_index: number`
+- `chapter_index: number`
 - `query: string`
 - `top_k: number`
 - `notes: string[]`

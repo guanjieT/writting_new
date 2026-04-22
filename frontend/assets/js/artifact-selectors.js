@@ -1,4 +1,4 @@
-import { getStepDependencies } from './step-meta.js';
+import { getStepDependencies, getStepLabel } from './step-meta.js';
 import {
   dependencySelectionFor,
   getStepScopeKind,
@@ -43,12 +43,56 @@ export function getArtifactForStep(snapshot, step, selection = {}) {
   return getArtifact(snapshot, step);
 }
 
+export function artifactIsStale(artifact) {
+  return Boolean(artifact?.metadata?.stale || artifact?.metadata?.state === 'stale');
+}
+
 function dependencyArtifactFor(step, dependency, snapshot, selection = {}) {
   return getScopedArtifact(snapshot, dependency, dependencySelectionFor(step, dependency, selection));
 }
 
+export function getDependencyStates(step, snapshot, dependencyMap, selection = {}) {
+  return getStepDependencies(step, dependencyMap).map((dependency) => {
+    const artifact = dependencyArtifactFor(step, dependency, snapshot, selection);
+    const status = !artifact ? 'missing' : artifactIsStale(artifact) ? 'stale' : 'active';
+    return {
+      dependency,
+      artifact,
+      status,
+      ready: status === 'active',
+    };
+  });
+}
+
+export function getStepReadiness(step, snapshot, dependencyMap, selection = {}) {
+  const dependencies = getDependencyStates(step, snapshot, dependencyMap, selection);
+  const missing = dependencies.filter((item) => item.status === 'missing').map((item) => item.dependency);
+  const stale = dependencies.filter((item) => item.status === 'stale').map((item) => item.dependency);
+  return {
+    ready: !missing.length && !stale.length,
+    dependencies,
+    missing,
+    stale,
+  };
+}
+
+export function getStepReadinessMessage(step, snapshot, dependencyMap, selection = {}) {
+  const readiness = getStepReadiness(step, snapshot, dependencyMap, selection);
+  if (readiness.ready) {
+    return '';
+  }
+  const parts = [];
+  if (readiness.missing.length) {
+    parts.push(`缺失：${readiness.missing.map((item) => getStepLabel(item)).join('、')}`);
+  }
+  if (readiness.stale.length) {
+    parts.push(`stale：${readiness.stale.map((item) => getStepLabel(item)).join('、')}`);
+  }
+  return `${getStepLabel(step)}的前置依赖未就绪，${parts.join('；')}。请先处理这些步骤。`;
+}
+
 export function isUnlocked(step, snapshot, dependencyMap, selection = {}) {
-  return getStepDependencies(step, dependencyMap).every((item) => Boolean(dependencyArtifactFor(step, item, snapshot, selection)));
+  return getStepReadiness(step, snapshot, dependencyMap, selection).ready;
 }
 
 export function getTasksForStepSelection(step, tasks = [], selection = {}) {
@@ -75,7 +119,7 @@ export function findLatestTaskForStep(step, tasks = [], selection = {}) {
 export function getStepStatus(step, snapshot, dependencyMap, tasks = [], selection = {}) {
   const artifact = getArtifactForStep(snapshot, step, selection);
   if (artifact) {
-    return artifact?.metadata?.stale ? { tone: 'warn', text: '已失效' } : { tone: 'success', text: '已产出' };
+    return artifactIsStale(artifact) ? { tone: 'warn', text: '已失效' } : { tone: 'success', text: '已产出' };
   }
 
   const latestTask = findLatestTaskForStep(step, tasks, selection);
@@ -85,8 +129,12 @@ export function getStepStatus(step, snapshot, dependencyMap, tasks = [], selecti
   if (latestTask?.status === 'pending' || latestTask?.status === 'running') {
     return { tone: 'accent', text: '执行中' };
   }
-  if (isUnlocked(step, snapshot, dependencyMap, selection)) {
+  const readiness = getStepReadiness(step, snapshot, dependencyMap, selection);
+  if (readiness.ready) {
     return { tone: 'warn', text: '待处理' };
+  }
+  if (readiness.stale.length) {
+    return { tone: 'warn', text: '前置 stale' };
   }
   return { tone: 'soft', text: '未解锁' };
 }

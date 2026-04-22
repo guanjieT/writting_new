@@ -519,6 +519,15 @@ details summary {
   border: 1px solid var(--line);
 }
 
+.dependency-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  text-align: right;
+}
+
 .queue-card.danger { border-color: rgba(192, 56, 56, 0.22); background: linear-gradient(180deg, #fff7f7, #fff0f0); }
 .queue-card.warn { border-color: rgba(173, 108, 0, 0.2); background: linear-gradient(180deg, #fff9ee, #fff4df); }
 .queue-card.accent { border-color: rgba(49, 94, 251, 0.22); background: linear-gradient(180deg, #f5f8ff, #edf2ff); }

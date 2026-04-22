@@ -52,15 +52,6 @@ export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
     return null;
   }
 
-  const chapterCountFromBriefs = selected.chapter_briefs.reduce((maxValue, brief) => {
-    const match = brief.match(/(\d+)(?:\s*[-~—]\s*(\d+))?\s*章/);
-    if (!match) {
-      return maxValue;
-    }
-    const endValue = Number(match[2] || match[1]) || 0;
-    return Math.max(maxValue, endValue);
-  }, 0);
-
   const summaryParts = [selected.goal, selected.conflict, selected.hook].filter(Boolean);
   return {
     volume_title: selected.title || '',
@@ -68,8 +59,7 @@ export function extractVolumeOutlineDefaults(snapshot, volumeIndex = 1) {
     volume_goal: selected.goal || '',
     volume_conflict: selected.conflict || '',
     volume_hook: selected.hook || '',
-    chapter_briefs: selected.chapter_briefs,
-    target_chapter_count: selected.target_chapter_count || chapterCountFromBriefs || selected.chapter_briefs.length || 0,
+    target_chapter_count: selected.target_chapter_count || 0,
   };
 }
 
@@ -170,9 +160,6 @@ function renderInputValue(field, project, snapshot, selection = {}) {
       }
       if (field.key === 'volume_hook') {
         return outlineDefaults.volume_hook || '';
-      }
-      if (field.key === 'chapter_briefs') {
-        return outlineDefaults.chapter_briefs || [];
       }
       if (field.key === 'target_chapter_count' && outlineDefaults.target_chapter_count) {
         return outlineDefaults.target_chapter_count;

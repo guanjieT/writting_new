@@ -1,10 +1,10 @@
 import { api } from './api-client.js';
 import { waitForTask } from './api-client.js';
 import { badge, escapeHtml, formatDate, renderJsonPreview, truncate } from './dom.js';
-import { getArtifact, getArtifactForStep, getScopedArtifact, getStepStatus } from './artifact-selectors.js';
+import { artifactIsStale, getArtifact, getArtifactForStep, getDependencyStates, getScopedArtifact, getStepStatus } from './artifact-selectors.js';
 import { getStepDependencies, getStepLabel, getStepMeta } from './step-meta.js';
 import { extractChapterPlanDefaults, extractVolumeOutlineDefaults } from './planning-defaults.js';
-import { dependencySelectionFor, normalizeScopeSelection } from './scope-utils.js';
+import { normalizeScopeSelection } from './scope-utils.js';
 import { listFromText } from './state.js';
 
 export function renderField(field, value) {
@@ -91,7 +91,6 @@ export function hydrateVolumeOutlineDefaults(form, snapshot) {
   assignValue('volume_goal', defaults.volume_goal);
   assignValue('volume_conflict', defaults.volume_conflict);
   assignValue('volume_hook', defaults.volume_hook);
-  assignValue('chapter_briefs', defaults.chapter_briefs);
 
   const targetChapterCountField = form.elements.namedItem('target_chapter_count');
   if (targetChapterCountField) {
@@ -265,6 +264,12 @@ function serializeStepPayload(form, step) {
     }
     payload[field.key] = String(rawValue || '').trim();
   }
+  for (const scopeKey of ['volume_index', 'chapter_index']) {
+    if (payload[scopeKey] !== undefined || !formData.has(scopeKey)) {
+      continue;
+    }
+    payload[scopeKey] = Number(formData.get(scopeKey) || 1) || 1;
+  }
   return payload;
 }
 
@@ -284,6 +289,7 @@ export function renderArtifactBlock(snapshot, step, selection = {}) {
   const summary = artifact.summary || {};
   const bestForSteps = Array.isArray(summary.best_for_steps) ? summary.best_for_steps : [];
   const renderList = (items) => items.length ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : '<p class="muted">暂无</p>';
+  const stale = artifactIsStale(artifact);
 
   return `
     <section class="artifact-viewer">
@@ -292,7 +298,7 @@ export function renderArtifactBlock(snapshot, step, selection = {}) {
           <p class="eyebrow">当前产物</p>
           <h3>${escapeHtml(artifact.title || meta.objectName || meta.label)}</h3>
         </div>
-        ${badge('已产出', 'success')}
+        ${badge(stale ? 'stale' : 'active', stale ? 'warn' : 'success')}
       </div>
       <section class="artifact-summary">
         <p class="eyebrow">结构化摘要</p>
@@ -362,15 +368,21 @@ export function renderDependencyList(step, dependencyMap, snapshot, selection = 
     return '<div class="empty-state compact">这个对象没有前置依赖。</div>';
   }
 
+  const dependencyStates = getDependencyStates(step, snapshot, dependencyMap, selection);
   return `
     <div class="stack-list">
       ${dependencies.map((dependency) => {
-        const dependencySelection = dependencySelectionFor(step, dependency, selection);
-        const ready = Boolean(getArtifactForStep(snapshot, dependency, dependencySelection));
+        const dependencyState = dependencyStates.find((item) => item.dependency === dependency);
+        const state = dependencyState?.status || 'missing';
+        const tone = state === 'active' ? 'success' : state === 'stale' ? 'warn' : 'danger';
+        const detail = state === 'active' ? '依赖可用' : state === 'stale' ? '依赖已失效，请先重新生成' : '尚未生成该依赖';
         return `
           <div class="dependency-row">
             <span>${escapeHtml(getStepLabel(dependency))}</span>
-            ${badge(ready ? '已就绪' : '缺失', ready ? 'success' : 'danger')}
+            <div class="dependency-state">
+              ${badge(state === 'missing' ? '缺失' : state, tone)}
+              <span class="muted">${escapeHtml(detail)}</span>
+            </div>
           </div>
         `;
       }).join('')}

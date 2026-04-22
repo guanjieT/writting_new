@@ -240,7 +240,7 @@ function renderActionsPanel(items, projectId) {
         <p class="muted">${escapeHtml(recommended ? recommended.detail : '没有明显阻塞项，可以继续往下生成或进行人工审读。')}</p>
         <div class="actions-row wrap">
           <a class="primary-link" href="${buildStepUrl(recommended?.step || 'workflow', projectId)}">打开主处理页面</a>
-          <a class="secondary-link" href="${withProjectQuery('/workflow', projectId)}">设定与写作</a>
+          <a class="secondary-link" href="${withProjectQuery('/workflow', projectId)}">主工作流</a>
           <a class="secondary-link" href="${withProjectQuery('/outline', projectId)}">结构台</a>
         </div>
       </section>

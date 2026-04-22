@@ -270,10 +270,13 @@ class TaskService:
     store: TaskStore
     executor: ThreadPoolExecutor
     _futures: dict[str, Future[Any]] | None = None
+    _deleted_task_ids: set[str] | None = None
 
     def __post_init__(self) -> None:
         if self._futures is None:
             self._futures = {}
+        if self._deleted_task_ids is None:
+            self._deleted_task_ids = set()
 
     def submit(
         self,
@@ -284,6 +287,8 @@ class TaskService:
         scope: dict[str, Any] | None = None,
     ) -> TaskRecord:
         task = self.store.create(TaskRecord(project_id=project_id, task_name=task_name, **(scope or {})))
+        if self._deleted_task_ids is not None:
+            self._deleted_task_ids.discard(task.task_id)
 
         def runner() -> Any:
             task.started_at = utc_now()
@@ -300,7 +305,8 @@ class TaskService:
                 raise
             finally:
                 task.finished_at = utc_now()
-                self.store.update(task)
+                if self._deleted_task_ids is None or task.task_id not in self._deleted_task_ids:
+                    self.store.update(task)
 
         future = self.executor.submit(runner)
         self._futures[task.task_id] = future
@@ -325,6 +331,8 @@ class TaskService:
 
     def delete_project(self, project_id: str) -> int:
         task_ids = [task.task_id for task in self.store.list(project_id)]
+        if self._deleted_task_ids is not None:
+            self._deleted_task_ids.update(task_ids)
         removed = self.store.delete_by_project(project_id)
         for task_id in task_ids:
             future = self._futures.get(task_id) if self._futures is not None else None

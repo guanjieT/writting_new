@@ -206,7 +206,7 @@ function renderSelectedProject(project) {
       </div>
       <p>${escapeHtml(truncate(project.input.premise || '暂无前提描述', 140))}</p>
       <div class="actions-row wrap">
-        <a class="primary-link" href="${withProjectQuery('/workflow', project.project_id)}">去设定与写作</a>
+        <a class="primary-link" href="${withProjectQuery('/workflow', project.project_id)}">去主工作流</a>
         <a class="secondary-link" href="${withProjectQuery('/outline', project.project_id)}">去结构台</a>
         <a class="secondary-link" href="${withProjectQuery('/review', project.project_id)}">去审查台</a>
       </div>
@@ -238,7 +238,7 @@ function renderProjectCard(project) {
       </div>
       <div class="actions-row wrap">
         <button class="secondary" type="button" data-select-project="${escapeHtml(project.project_id)}">设为当前</button>
-        <a class="secondary-link" href="${withProjectQuery('/workflow', project.project_id)}">设定与写作</a>
+        <a class="secondary-link" href="${withProjectQuery('/workflow', project.project_id)}">主工作流</a>
         <a class="secondary-link" href="${withProjectQuery('/outline', project.project_id)}">结构台</a>
         <a class="secondary-link" href="${withProjectQuery('/review', project.project_id)}">审查台</a>
         <button class="ghost danger" type="button" data-delete-project="${escapeHtml(project.project_id)}">删除</button>
