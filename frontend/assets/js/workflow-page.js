@@ -1,7 +1,7 @@
 import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, PAGE_STEP_GROUPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
 import { getArtifactForStep, getStepReadinessMessage, getStepStatus, getTasksForStepSelection, isUnlocked } from './artifact-selectors.js';
-import { getFieldDisplayValue, inferChapterCountForVolume } from './planning-defaults.js';
+import { getChapterEntryOptions, getFieldDisplayValue, getSelectableChapterCount, getSelectableVolumeCount, getVolumeEntryOptions } from './planning-defaults.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, getPreferredStep, setPreferredStep, setSelectedProjectId, syncProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderChecklist, renderDependencyList, renderStageOverview, renderTaskList, renderField, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
@@ -28,10 +28,22 @@ let currentSelection = readScopeSelectionFromUrl();
 
 function updateWorkflowSelection(nextSelection) {
   currentSelection = clampScopeSelection(currentSnapshot, nextSelection, {
-    getChapterCountForVolume: inferChapterCountForVolume,
+    getVolumeCount: getSelectableVolumeCount,
+    getChapterCountForVolume: getSelectableChapterCount,
   });
   syncScopeSelectionToUrl(currentSelection);
   renderPage();
+}
+
+function renderSelectionOptions(options, selectedValue, emptyLabel) {
+  if (!options.length) {
+    return `<option value="">${escapeHtml(emptyLabel)}</option>`;
+  }
+  const selected = String(selectedValue || '');
+  return options.map((option) => {
+    const value = String(option.value || '');
+    return `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(option.label || value)}</option>`;
+  }).join('');
 }
 
 function renderSelectionCard(snapshot) {
@@ -39,14 +51,18 @@ function renderSelectionCard(snapshot) {
     return '';
   }
 
-  const project = snapshot.project;
-  const volumeOptions = Array.from({ length: Math.max(Number(project.input.target_volume_count || 1), 1) }, (_, index) => index + 1);
-  const chapterCount = Math.max(Number(inferChapterCountForVolume(snapshot, currentSelection.volumeIndex)), 1);
-  const chapterOptions = Array.from({ length: chapterCount }, (_, index) => index + 1);
+  const volumeOptions = getVolumeEntryOptions(snapshot);
+  const chapterOptions = volumeOptions.length ? getChapterEntryOptions(snapshot, currentSelection.volumeIndex) : [];
+  const hasVolumeOptions = volumeOptions.length > 0;
+  const hasChapterOptions = chapterOptions.length > 0;
   const scopedArtifact = getArtifactForStep(snapshot, currentStep, selectionForStep(currentStep, currentSelection));
   const stepScopeKind = getStepScopeKind(currentStep);
   const scopedLabel = stepScopeKind === 'volume' ? '当前卷有对应产物' : stepScopeKind === 'chapter' ? '当前章节有对应产物' : '当前对象有对应产物';
   const scopeHint = stepScopeKind === 'volume' ? '当前步骤会按这个卷读写与删除。' : stepScopeKind === 'chapter' ? '当前步骤会按这个章节读写与删除。' : '切换到卷级或章节步骤后，会沿用这个上下文。';
+  const emptyMessages = [
+    hasVolumeOptions ? '' : '暂无可选卷条目，请先生成粗卷纲。',
+    hasVolumeOptions && !hasChapterOptions ? '当前卷暂无可选章节条目，请先生成粗章纲。' : '',
+  ].filter(Boolean);
 
   return `
     <div class="context-card subtle">
@@ -55,18 +71,19 @@ function renderSelectionCard(snapshot) {
       <div class="form-grid">
         <div class="field">
           <label for="workflow-volume-index">卷序号</label>
-          <select id="workflow-volume-index" data-workflow-volume-index>
-            ${volumeOptions.map((value) => `<option value="${value}" ${value === currentSelection.volumeIndex ? 'selected' : ''}>第 ${value} 卷</option>`).join('')}
+          <select id="workflow-volume-index" data-workflow-volume-index ${hasVolumeOptions ? '' : 'disabled'}>
+            ${renderSelectionOptions(volumeOptions, currentSelection.volumeIndex, '暂无可选卷条目')}
           </select>
         </div>
         <div class="field">
-          <label for="workflow-chapter-index">章节序号</label>
-          <select id="workflow-chapter-index" data-workflow-chapter-index>
-            ${chapterOptions.map((value) => `<option value="${value}" ${value === currentSelection.chapterIndex ? 'selected' : ''}>第 ${value} 章</option>`).join('')}
+          <label for="workflow-chapter-index">章节条目</label>
+          <select id="workflow-chapter-index" data-workflow-chapter-index ${hasChapterOptions ? '' : 'disabled'}>
+            ${renderSelectionOptions(chapterOptions, currentSelection.chapterIndex, '暂无可选章节条目')}
           </select>
         </div>
       </div>
       <p class="muted">${scopeHint}</p>
+      ${emptyMessages.map((message) => `<div class="notice warn">${escapeHtml(message)}</div>`).join('')}
       <div class="chips">
         ${badge(scopedArtifact ? scopedLabel : `${scopedLabel.replace('有对应产物', '暂无产物')}`, scopedArtifact ? 'success' : 'soft')}
       </div>
@@ -117,9 +134,10 @@ function renderProjectMini(snapshot) {
 
   projectMini.querySelectorAll('[data-workflow-volume-index], [data-workflow-chapter-index]').forEach((control) => {
     control.addEventListener('change', () => {
+      const volumeChanged = control.matches('[data-workflow-volume-index]');
       updateWorkflowSelection({
         volumeIndex: Number(projectMini.querySelector('[data-workflow-volume-index]')?.value || currentSelection.volumeIndex || 1) || 1,
-        chapterIndex: Number(projectMini.querySelector('[data-workflow-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
+        chapterIndex: volumeChanged ? 1 : Number(projectMini.querySelector('[data-workflow-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
       });
     });
   });
@@ -174,6 +192,7 @@ function buildStepForm(step, selection) {
   const scopedArtifact = getArtifactForStep(currentSnapshot, step, selectionForStep(step, selection));
   const unlocked = isUnlocked(step, currentSnapshot, dependencyMap, selection);
   const readinessMessage = getStepReadinessMessage(step, currentSnapshot, dependencyMap, selection);
+  const fieldContext = { project, snapshot: currentSnapshot, selection };
   const hiddenScopeInputs = [
     scopeKind !== 'project' && !fieldKeys.has('volume_index') ? `<input type="hidden" name="volume_index" value="${selection.volumeIndex}" />` : '',
     scopeKind === 'chapter' && !fieldKeys.has('chapter_index') ? `<input type="hidden" name="chapter_index" value="${selection.chapterIndex}" />` : '',
@@ -182,13 +201,13 @@ function buildStepForm(step, selection) {
   return `
     <form class="workspace-form" data-step-form="${step}">
       <div class="form-grid">
-        ${primaryFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, selection))).join('')}
+        ${primaryFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, selection), fieldContext)).join('')}
       </div>
       ${advancedFields.length ? `
         <details class="advanced-panel">
           <summary>高级设置</summary>
           <div class="form-grid compact-grid">
-            ${advancedFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, selection))).join('')}
+            ${advancedFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, selection), fieldContext)).join('')}
           </div>
         </details>
       ` : ''}
@@ -250,18 +269,6 @@ function renderWorkspace() {
   if (step === 'chapter_plan') {
     hydrateChapterPlanDefaults(form, currentSnapshot);
   }
-
-  form.querySelectorAll('[name="volume_index"], [name="chapter_index"]').forEach((control) => {
-    control.addEventListener('change', () => {
-      if (getStepScopeKind(step) === 'project') {
-        return;
-      }
-      updateWorkflowSelection({
-        volumeIndex: Number(form.elements.namedItem('volume_index')?.value || currentSelection.volumeIndex || 1) || 1,
-        chapterIndex: Number(form.elements.namedItem('chapter_index')?.value || currentSelection.chapterIndex || 1) || 1,
-      });
-    });
-  });
 
   form.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-ai-complete]');
@@ -419,7 +426,8 @@ async function loadPage() {
   currentSnapshot = snapshot;
   currentTasks = tasks;
   currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl(), {
-    getChapterCountForVolume: inferChapterCountForVolume,
+    getVolumeCount: getSelectableVolumeCount,
+    getChapterCountForVolume: getSelectableChapterCount,
   });
   syncScopeSelectionToUrl(currentSelection);
   setSelectedProjectId(projectId);

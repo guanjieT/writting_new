@@ -1,4 +1,5 @@
 import { getScopedArtifact } from './artifact-selectors.js';
+import { getStepLabel } from './step-meta.js';
 import { textFromList } from './state.js';
 import {
   getGeneratedStructuredPayload,
@@ -32,6 +33,155 @@ function collectProjectListValues(projectInput, keys) {
 function positiveNumber(value) {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
+function optionLabel(kind, index, title) {
+  const cleanTitle = String(title || '').trim();
+  const prefix = `第 ${index} ${kind}`;
+  return cleanTitle ? `${prefix} · ${cleanTitle}` : prefix;
+}
+
+function normalizeStaticSelectOptions(options = []) {
+  return options
+    .map((option) => {
+      if (typeof option === 'string') {
+        return { value: option, label: option };
+      }
+      const value = String(option?.value ?? option?.key ?? '').trim();
+      const label = String(option?.label ?? option?.value ?? option?.key ?? '').trim();
+      return {
+        value,
+        label: label || value,
+        disabled: Boolean(option?.disabled),
+      };
+    })
+    .filter((option) => option.label);
+}
+
+function selectionNumbers(selection = {}) {
+  return {
+    volumeIndex: Math.max(Number(selection.volumeIndex || selection.volume_index || 1) || 1, 1),
+    chapterIndex: Math.max(Number(selection.chapterIndex || selection.chapter_index || 1) || 1, 1),
+  };
+}
+
+export function getVolumeEntryOptions(snapshot) {
+  return parseRoughVolumeOutlineVolumes(snapshot)
+    .slice()
+    .sort((left, right) => left.index - right.index)
+    .map((volume) => ({
+      value: String(volume.index),
+      label: optionLabel('卷', volume.index, volume.title),
+    }));
+}
+
+export function getChapterEntryOptions(snapshot, volumeIndex = 1) {
+  return parseRoughChapterPlanChapters(snapshot, volumeIndex)
+    .slice()
+    .sort((left, right) => left.index - right.index)
+    .map((chapter) => ({
+      value: String(chapter.index),
+      label: optionLabel('章', chapter.index, chapter.title),
+    }));
+}
+
+export function getSelectableVolumeCount(snapshot) {
+  const indices = getVolumeEntryOptions(snapshot).map((option) => Number(option.value || 0)).filter((value) => value > 0);
+  return indices.length ? Math.max(...indices) : 1;
+}
+
+export function getSelectableChapterCount(snapshot, volumeIndex = 1) {
+  const indices = getChapterEntryOptions(snapshot, volumeIndex).map((option) => Number(option.value || 0)).filter((value) => value > 0);
+  return indices.length ? Math.max(...indices) : 1;
+}
+
+function artifactStepKey(artifact) {
+  return String(artifact?.metadata?.step || artifact?.key || '').split(':')[0];
+}
+
+function artifactScopeLabel(artifact) {
+  const metadata = artifact?.metadata || {};
+  const scopeKind = metadata.scope_kind || 'project';
+  if (scopeKind === 'chapter') {
+    return `第 ${metadata.volume_index || 1} 卷第 ${metadata.chapter_index || 1} 章`;
+  }
+  if (scopeKind === 'volume') {
+    return `第 ${metadata.volume_index || 1} 卷`;
+  }
+  return '全书';
+}
+
+function artifactScopeRank(artifact, selection) {
+  const metadata = artifact?.metadata || {};
+  const scopeKind = metadata.scope_kind || 'project';
+  if (
+    scopeKind === 'chapter'
+    && Number(metadata.volume_index || 0) === selection.volumeIndex
+    && Number(metadata.chapter_index || 0) === selection.chapterIndex
+  ) {
+    return 0;
+  }
+  if (scopeKind === 'volume' && Number(metadata.volume_index || 0) === selection.volumeIndex) {
+    return 1;
+  }
+  if (scopeKind === 'project') {
+    return 2;
+  }
+  return 3;
+}
+
+function artifactMatchesSelection(artifact, selection) {
+  const metadata = artifact?.metadata || {};
+  const scopeKind = metadata.scope_kind || 'project';
+  if (scopeKind === 'project') {
+    return true;
+  }
+  if (scopeKind === 'volume') {
+    return Number(metadata.volume_index || 0) === selection.volumeIndex;
+  }
+  if (scopeKind === 'chapter') {
+    return Number(metadata.volume_index || 0) === selection.volumeIndex
+      && Number(metadata.chapter_index || 0) === selection.chapterIndex;
+  }
+  return false;
+}
+
+function getCurrentArtifactOptions(snapshot, selection = {}) {
+  const normalized = selectionNumbers(selection);
+  return Object.values(snapshot?.artifacts || {})
+    .filter((artifact) => artifactMatchesSelection(artifact, normalized))
+    .sort((left, right) => {
+      const rankDiff = artifactScopeRank(left, normalized) - artifactScopeRank(right, normalized);
+      if (rankDiff !== 0) {
+        return rankDiff;
+      }
+      return String(left?.key || '').localeCompare(String(right?.key || ''));
+    })
+    .map((artifact) => {
+      const stepKey = artifactStepKey(artifact);
+      const title = artifact?.title || getStepLabel(stepKey) || stepKey || artifact?.key || '未命名产物';
+      return {
+        value: String(artifact?.key || stepKey),
+        label: `${title} · ${artifactScopeLabel(artifact)} · ${artifact?.key || stepKey}`,
+      };
+    });
+}
+
+export function getFieldSelectOptions(field, project, snapshot, selection = {}) {
+  if (field.optionSource === 'volume_entries') {
+    return getVolumeEntryOptions(snapshot);
+  }
+  if (field.optionSource === 'chapter_entries') {
+    const { volumeIndex } = selectionNumbers(selection);
+    return getChapterEntryOptions(snapshot, volumeIndex);
+  }
+  if (field.optionSource === 'current_artifacts') {
+    return getCurrentArtifactOptions(snapshot, selection);
+  }
+  if (Array.isArray(field.options)) {
+    return normalizeStaticSelectOptions(field.options);
+  }
+  return [];
 }
 
 function extractVolumeOutlineChapterCount(snapshot, volumeIndex = 1) {
@@ -134,6 +284,11 @@ function renderInputValue(field, project, snapshot, selection = {}) {
   if (field.key === 'chapter_index') {
     return Math.max(chapterIndex, 1);
   }
+  if (field.key === 'target_artifact' && field.optionSource === 'current_artifacts') {
+    const chapterArtifact = getScopedArtifact(snapshot, 'chapter', { volumeIndex, chapterIndex });
+    const artifactOptions = getCurrentArtifactOptions(snapshot, selection);
+    return chapterArtifact?.key || artifactOptions[0]?.value || field.defaultValue || '';
+  }
   if (field.key === 'requirements_text') {
     return projectInput.premise || '';
   }
@@ -195,6 +350,9 @@ function renderInputValue(field, project, snapshot, selection = {}) {
       }
       if (field.key === 'scene_summaries') {
         return chapterDefaults.scene_summaries || [];
+      }
+      if (field.key === 'target_words' && chapterDefaults.target_words) {
+        return chapterDefaults.target_words;
       }
     }
   }

@@ -3,16 +3,41 @@ import { waitForTask } from './api-client.js';
 import { badge, escapeHtml, formatDate, renderJsonPreview, truncate } from './dom.js';
 import { artifactIsStale, getArtifact, getArtifactForStep, getDependencyStates, getScopedArtifact, getStepStatus } from './artifact-selectors.js';
 import { getStepDependencies, getStepLabel, getStepMeta } from './step-meta.js';
-import { extractChapterPlanDefaults, extractVolumeOutlineDefaults } from './planning-defaults.js';
+import { extractChapterPlanDefaults, extractVolumeOutlineDefaults, getFieldSelectOptions } from './planning-defaults.js';
 import { normalizeScopeSelection } from './scope-utils.js';
 import { listFromText } from './state.js';
 
-export function renderField(field, value) {
+function selectedOptionValue(value, options) {
+  const rawValue = String(value ?? '');
+  if (options.some((option) => String(option.value) === rawValue && !option.disabled)) {
+    return rawValue;
+  }
+  const firstAvailable = options.find((option) => !option.disabled);
+  return firstAvailable ? String(firstAvailable.value) : rawValue;
+}
+
+function renderSelectOptions(options, selectedValue, emptyLabel) {
+  if (!options.length) {
+    return `<option value="">${escapeHtml(emptyLabel || '暂无可选项')}</option>`;
+  }
+  return options.map((option) => {
+    const value = String(option.value ?? '');
+    const label = String(option.label ?? value);
+    return `<option value="${escapeHtml(value)}" ${value === selectedValue ? 'selected' : ''} ${option.disabled ? 'disabled' : ''}>${escapeHtml(label)}</option>`;
+  }).join('');
+}
+
+export function renderField(field, value, context = {}) {
   const safeValue = value ?? '';
   const isTextarea = field.type === 'textarea';
-  const isCompletable = field.type !== 'checkbox';
+  const isSelect = field.type === 'select';
+  const isCompletable = !['checkbox', 'select', 'hidden'].includes(field.type);
   const isFull = field.full !== undefined ? field.full : isTextarea || Boolean(field.list);
   const inputId = `${field.stepKey || 'step'}-${field.key}`;
+
+  if (field.type === 'hidden') {
+    return `<input type="hidden" name="${escapeHtml(field.key)}" value="${escapeHtml(String(safeValue))}" />`;
+  }
 
   if (field.type === 'checkbox') {
     return `
@@ -31,6 +56,27 @@ export function renderField(field, value) {
           ${isCompletable ? `<button type="button" class="field-ai" data-ai-complete data-field-key="${escapeHtml(field.key)}" data-field-label="${escapeHtml(field.label)}" data-field-type="${escapeHtml(field.type)}" data-field-placeholder="${escapeHtml(field.placeholder || '')}">AI 补全</button>` : ''}
         </div>
         <textarea id="${escapeHtml(inputId)}" name="${field.key}" rows="${field.rows || 4}" placeholder="${escapeHtml(field.placeholder || '')}">${escapeHtml(safeValue)}</textarea>
+      </div>
+    `;
+  }
+
+  if (isSelect) {
+    const options = getFieldSelectOptions(field, context.project, context.snapshot, context.selection);
+    const selectedValue = selectedOptionValue(safeValue, options);
+    const disabled = Boolean(field.disabled) || !options.length;
+    const selectName = field.submitWithHidden || disabled ? '' : `name="${escapeHtml(field.key)}"`;
+    const hiddenInput = field.submitWithHidden
+      ? `<input type="hidden" name="${escapeHtml(field.key)}" value="${escapeHtml(String(selectedValue))}" />`
+      : '';
+    return `
+      <div class="field ${isFull ? 'full' : ''}">
+        <div class="field-head">
+          <label for="${escapeHtml(inputId)}">${escapeHtml(field.label)}</label>
+        </div>
+        <select id="${escapeHtml(inputId)}" ${selectName} data-field-key="${escapeHtml(field.key)}" ${disabled ? 'disabled' : ''}>
+          ${renderSelectOptions(options, selectedValue, field.emptyLabel)}
+        </select>
+        ${hiddenInput}
       </div>
     `;
   }
@@ -158,6 +204,9 @@ export function hydrateChapterPlanDefaults(form, snapshot) {
   assignValue('conflict', defaults.conflict);
   assignValue('hook', defaults.hook);
   assignValue('scene_summaries', defaults.scene_summaries);
+  if (defaults.target_words) {
+    assignValue('target_words', defaults.target_words);
+  }
 
   if (volumeIndexField && !volumeIndexField.dataset.chapterPlanHydrateBound) {
     volumeIndexField.addEventListener('input', () => hydrateChapterPlanDefaults(form, snapshot));
@@ -254,7 +303,7 @@ function serializeStepPayload(form, step) {
       payload[field.key] = rawValue === 'on';
       continue;
     }
-    if (field.type === 'number') {
+    if (field.type === 'number' || field.valueType === 'number') {
       payload[field.key] = Number(rawValue || field.defaultValue || 0);
       continue;
     }

@@ -1,7 +1,7 @@
 import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, REVIEW_GROUPS, getStepDependencies, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
 import { findLatestTaskForStep, getArtifactForStep, getStepStatus, getTasksForSelection, isUnlocked } from './artifact-selectors.js';
-import { inferChapterCountForVolume } from './planning-defaults.js';
+import { getChapterEntryOptions, getSelectableChapterCount, getSelectableVolumeCount, getVolumeEntryOptions } from './planning-defaults.js';
 import { badge, escapeHtml, formatDate, renderEmpty, renderJsonPreview, renderNotice, truncate } from './dom.js';
 import { getPageProjectId, setSelectedProjectId, syncTopNavLinks, withProjectQuery } from './state.js';
 import { clampScopeSelection, getStepScopeKind, readScopeSelectionFromUrl, selectionForStep, syncScopeSelectionToUrl } from './scope-utils.js';
@@ -45,16 +45,26 @@ function workflowStepKeys() {
   return workflowSteps.map((step) => (typeof step === 'string' ? step : step?.key)).filter(Boolean);
 }
 
+function renderSelectionOptions(options, selectedValue, emptyLabel) {
+  if (!options.length) {
+    return `<option value="">${escapeHtml(emptyLabel)}</option>`;
+  }
+  const selected = String(selectedValue || '');
+  return options.map((option) => {
+    const value = String(option.value || '');
+    return `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(option.label || value)}</option>`;
+  }).join('');
+}
+
 function renderSelection(snapshot) {
   if (!snapshot) {
     return;
   }
 
-  const project = snapshot.project;
-  const volumeCount = Math.max(Number(project.input.target_volume_count || 1), 1);
-  const chapterCount = Math.max(Number(inferChapterCountForVolume(snapshot, currentSelection.volumeIndex)), 1);
-  const volumeOptions = Array.from({ length: volumeCount }, (_, index) => index + 1);
-  const chapterOptions = Array.from({ length: chapterCount }, (_, index) => index + 1);
+  const volumeOptions = getVolumeEntryOptions(snapshot);
+  const chapterOptions = volumeOptions.length ? getChapterEntryOptions(snapshot, currentSelection.volumeIndex) : [];
+  const hasVolumeOptions = volumeOptions.length > 0;
+  const hasChapterOptions = chapterOptions.length > 0;
 
   selectionPanel.innerHTML = `
     <div class="context-card subtle">
@@ -63,30 +73,31 @@ function renderSelection(snapshot) {
       <div class="form-grid">
         <div class="field">
           <label for="review-volume-index">卷序号</label>
-          <select id="review-volume-index" data-review-volume-index>
-            ${volumeOptions.map((value) => `<option value="${value}" ${value === currentSelection.volumeIndex ? 'selected' : ''}>第 ${value} 卷</option>`).join('')}
+          <select id="review-volume-index" data-review-volume-index ${hasVolumeOptions ? '' : 'disabled'}>
+            ${renderSelectionOptions(volumeOptions, currentSelection.volumeIndex, '暂无可选卷条目')}
           </select>
         </div>
         <div class="field">
-          <label for="review-chapter-index">章节序号</label>
-          <select id="review-chapter-index" data-review-chapter-index>
-            ${chapterOptions.map((value) => `<option value="${value}" ${value === currentSelection.chapterIndex ? 'selected' : ''}>第 ${value} 章</option>`).join('')}
+          <label for="review-chapter-index">章节条目</label>
+          <select id="review-chapter-index" data-review-chapter-index ${hasChapterOptions ? '' : 'disabled'}>
+            ${renderSelectionOptions(chapterOptions, currentSelection.chapterIndex, '暂无可选章节条目')}
           </select>
         </div>
       </div>
-      <p class="muted">章节类对象的状态、展示和删除都以这里的卷/章为准。</p>
+      <p class="muted">${!hasVolumeOptions ? '暂无可选卷条目，请先生成粗卷纲。' : hasChapterOptions ? '章节类对象的状态、展示和删除都以这里的卷/章为准。' : '当前卷暂无可选章节条目，请先生成粗章纲。'}</p>
     </div>
   `;
 
   selectionPanel.querySelectorAll('[data-review-volume-index], [data-review-chapter-index]').forEach((control) => {
     control.addEventListener('change', () => {
+      const volumeChanged = control.matches('[data-review-volume-index]');
       currentSelection = clampScopeSelection(
         currentSnapshot,
         {
           volumeIndex: Number(selectionPanel.querySelector('[data-review-volume-index]')?.value || currentSelection.volumeIndex || 1) || 1,
-          chapterIndex: Number(selectionPanel.querySelector('[data-review-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
+          chapterIndex: volumeChanged ? 1 : Number(selectionPanel.querySelector('[data-review-chapter-index]')?.value || currentSelection.chapterIndex || 1) || 1,
         },
-        { getChapterCountForVolume: inferChapterCountForVolume },
+        { getVolumeCount: getSelectableVolumeCount, getChapterCountForVolume: getSelectableChapterCount },
       );
       syncScopeSelectionToUrl(currentSelection);
       renderPage();
@@ -353,7 +364,8 @@ async function loadPage() {
   currentSnapshot = snapshot;
   currentTasks = tasks;
   currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl(), {
-    getChapterCountForVolume: inferChapterCountForVolume,
+    getVolumeCount: getSelectableVolumeCount,
+    getChapterCountForVolume: getSelectableChapterCount,
   });
   syncScopeSelectionToUrl(currentSelection);
 

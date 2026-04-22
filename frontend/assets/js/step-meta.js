@@ -107,7 +107,7 @@ export const STEP_META = {
     objectName: '卷纲',
     reviewPoints: ['卷目标是否独立完整', '是否与粗卷纲对应', '是否可直接进入粗章纲阶段'],
     fields: [
-      { key: 'volume_index', label: '卷序号', type: 'number', defaultValue: 1 },
+      { key: 'volume_index', label: '卷序号', type: 'select', optionSource: 'volume_entries', valueType: 'number', defaultValue: 1, disabled: true, submitWithHidden: true, emptyLabel: '暂无可选卷条目' },
       { key: 'volume_title', label: '卷标题', type: 'text', placeholder: '例如：第一卷·入局' },
       { key: 'volume_summary', label: '卷摘要', type: 'textarea', rows: 5 },
       { key: 'volume_goal', label: '卷目标', type: 'text' },
@@ -129,7 +129,7 @@ export const STEP_META = {
     objectName: '粗章纲',
     reviewPoints: ['卷内章节节奏是否成链', '章节之间是否有铺垫和呼应', '是否保留了细化空间'],
     fields: [
-      { key: 'volume_index', label: '卷序号', type: 'number', defaultValue: 1 },
+      { key: 'volume_index', label: '卷序号', type: 'select', optionSource: 'volume_entries', valueType: 'number', defaultValue: 1, disabled: true, submitWithHidden: true, emptyLabel: '暂无可选卷条目' },
       { key: 'target_chapter_count', label: '章节数', type: 'number', defaultValue: 0 },
       { key: 'notes', label: '补充说明', type: 'textarea', rows: 4, list: true },
       { key: 'temperature', label: '生成温度', type: 'number', step: '0.1', defaultValue: 0.7, advanced: true },
@@ -145,8 +145,8 @@ export const STEP_META = {
     objectName: '章节计划',
     reviewPoints: ['章节目标是否单一', '是否与粗章纲对应', '是否已细化到可直接写作'],
     fields: [
-      { key: 'volume_index', label: '卷序号', type: 'number', defaultValue: 1 },
-      { key: 'chapter_index', label: '章节序号', type: 'number', defaultValue: 1 },
+      { key: 'volume_index', label: '卷序号', type: 'select', optionSource: 'volume_entries', valueType: 'number', defaultValue: 1, disabled: true, submitWithHidden: true, emptyLabel: '暂无可选卷条目' },
+      { key: 'chapter_index', label: '章节条目', type: 'select', optionSource: 'chapter_entries', valueType: 'number', defaultValue: 1, disabled: true, submitWithHidden: true, emptyLabel: '暂无可选章节条目' },
       { key: 'chapter_title', label: '章节标题', type: 'text' },
       { key: 'chapter_summary', label: '章节摘要', type: 'textarea', rows: 5 },
       { key: 'chapter_type', label: '章节类型', type: 'text', defaultValue: '主线推进章' },
@@ -174,8 +174,8 @@ export const STEP_META = {
     objectName: '章节正文',
     reviewPoints: ['本章目标是否落地', '节奏是否符合章节计划', '场景推进是否清晰'],
     fields: [
-      { key: 'volume_index', label: '卷序号', type: 'number', defaultValue: 1 },
-      { key: 'chapter_index', label: '章节序号', type: 'number', defaultValue: 1 },
+      { key: 'volume_index', label: '卷序号', type: 'select', optionSource: 'volume_entries', valueType: 'number', defaultValue: 1, disabled: true, submitWithHidden: true, emptyLabel: '暂无可选卷条目' },
+      { key: 'chapter_index', label: '章节条目', type: 'select', optionSource: 'chapter_entries', valueType: 'number', defaultValue: 1, disabled: true, submitWithHidden: true, emptyLabel: '暂无可选章节条目' },
       { key: 'chapter_goal', label: '章节目标', type: 'text', placeholder: '一句话写清本章完成什么推进' },
       { key: 'target_words', label: '目标字数', type: 'number', defaultValue: 2000 },
       { key: 'scene_beats', label: '场景节拍', type: 'textarea', rows: 5, list: true, placeholder: '一行一段节拍，例如：\n遭遇伏击\n被迫结盟\n留下误导线索' },
@@ -193,7 +193,7 @@ export const STEP_META = {
     objectName: '修订结果',
     reviewPoints: ['修订目标是否具体', '是否只改需要改的部分', '是否保住了原有结构作用'],
     fields: [
-      { key: 'target_artifact', label: '目标产物键', type: 'text', defaultValue: 'chapter' },
+      { key: 'target_artifact', label: '目标产物键', type: 'select', optionSource: 'current_artifacts', defaultValue: 'chapter', emptyLabel: '当前范围暂无可选产物' },
       { key: 'instruction', label: '修订指令', type: 'textarea', rows: 5, placeholder: '例如：压缩说明性段落，增强人物对话中的冲突感' },
       { key: 'focus_areas', label: '修订关注点', type: 'textarea', rows: 4, list: true, placeholder: '一行一条，例如：\n节奏\n人物动机\n结尾钩子' },
       { key: 'temperature', label: '生成温度', type: 'number', step: '0.1', defaultValue: 0.7, advanced: true },
@@ -209,7 +209,17 @@ export const STEP_META = {
     objectName: '一致性报告',
     reviewPoints: ['是否覆盖设定与人物', '是否指出具体冲突', '问题是否可追溯到上游资产'],
     fields: [
-      { key: 'scope', label: '检查范围', type: 'text', defaultValue: 'project' },
+      {
+        key: 'scope',
+        label: '检查范围',
+        type: 'select',
+        defaultValue: 'project',
+        options: [
+          { value: 'project', label: '全书范围' },
+          { value: 'volume', label: '当前卷范围' },
+          { value: 'chapter', label: '当前章范围' },
+        ],
+      },
       { key: 'known_rules', label: '已知规则', type: 'textarea', rows: 5, list: true, placeholder: '可填已知设定规则，帮助报告更聚焦' },
       { key: 'notes', label: '补充说明', type: 'textarea', rows: 4, list: true },
       { key: 'temperature', label: '生成温度', type: 'number', step: '0.1', defaultValue: 0.7, advanced: true },

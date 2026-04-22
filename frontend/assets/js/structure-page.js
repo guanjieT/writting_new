@@ -1,7 +1,7 @@
 import { api } from './api-client.js';
 import { FALLBACK_WORKFLOW_STEPS, getStepLabel, getStepMeta, loadWorkflowContext } from './step-meta.js';
 import { getArtifactForStep, getStepReadinessMessage, getStepStatus, getTasksForSelection, isUnlocked } from './artifact-selectors.js';
-import { getFieldDisplayValue, inferChapterCountForVolume } from './planning-defaults.js';
+import { getChapterEntryOptions, getFieldDisplayValue, getSelectableChapterCount, getSelectableVolumeCount, getVolumeEntryOptions } from './planning-defaults.js';
 import { badge, escapeHtml, renderEmpty, renderNotice, summarizeList } from './dom.js';
 import { getPageProjectId, syncProjectId, syncTopNavLinks } from './state.js';
 import { deleteStepArtifact, hydrateChapterPlanDefaults, hydrateRoughChapterPlanDefaults, hydrateVolumeOutlineDefaults, renderArtifactBlock, renderDependencyList, renderField, renderStageOverview, renderTaskList, runFieldCompletion, runStepFromForm } from './workspace-utils.js';
@@ -62,14 +62,6 @@ function buildSelectionUrl(path, projectId, selection) {
   return `${url.pathname}${url.search}`;
 }
 
-function getSelectedChapterCount(snapshot, volumeIndex) {
-  return extractChapterCount(snapshot, volumeIndex);
-}
-
-function extractChapterCount(snapshot, volumeIndex) {
-  return inferChapterCountForVolume(snapshot, volumeIndex);
-}
-
 function renderProjectMini(snapshot, selection) {
   if (!snapshot) {
     renderEmpty(projectMini, '请先在项目台选择一个项目。');
@@ -105,16 +97,27 @@ function renderProjectMini(snapshot, selection) {
   `;
 }
 
+function renderSelectionOptions(options, selectedValue, emptyLabel) {
+  if (!options.length) {
+    return `<option value="">${escapeHtml(emptyLabel)}</option>`;
+  }
+  const selected = String(selectedValue || '');
+  return options.map((option) => {
+    const value = String(option.value || '');
+    return `<option value="${escapeHtml(value)}" ${value === selected ? 'selected' : ''}>${escapeHtml(option.label || value)}</option>`;
+  }).join('');
+}
+
 function renderSelection(snapshot, selection) {
   if (!selectionPanel) {
     return;
   }
 
   const project = snapshot?.project;
-  const volumeCount = Math.max(Number(project?.input?.target_volume_count || 1), 1);
-  const volumeOptions = Array.from({ length: volumeCount }, (_, index) => index + 1);
-  const chapterCount = Math.max(Number(getSelectedChapterCount(snapshot, selection.volumeIndex)), 1);
-  const chapterOptions = Array.from({ length: chapterCount }, (_, index) => index + 1);
+  const volumeOptions = getVolumeEntryOptions(snapshot);
+  const chapterOptions = volumeOptions.length ? getChapterEntryOptions(snapshot, selection.volumeIndex) : [];
+  const hasVolumeOptions = volumeOptions.length > 0;
+  const hasChapterOptions = chapterOptions.length > 0;
 
   selectionPanel.innerHTML = PAGE_KEY === 'outline' ? `
     <div class="context-card subtle">
@@ -132,11 +135,11 @@ function renderSelection(snapshot, selection) {
       <h3>当前第 ${selection.volumeIndex} 卷</h3>
       <div class="field full">
         <label for="volume-index-select">卷序号</label>
-        <select id="volume-index-select" name="volume_index">
-          ${volumeOptions.map((value) => `<option value="${value}" ${value === selection.volumeIndex ? 'selected' : ''}>第 ${value} 卷</option>`).join('')}
+        <select id="volume-index-select" name="volume_index" ${hasVolumeOptions ? '' : 'disabled'}>
+          ${renderSelectionOptions(volumeOptions, selection.volumeIndex, '暂无可选卷条目')}
         </select>
       </div>
-      <p class="muted">卷纲和粗章纲都只处理当前卷。</p>
+      <p class="muted">${hasVolumeOptions ? '卷纲和粗章纲都只处理当前卷。' : '暂无可选卷条目，请先在总纲页面生成粗卷纲。'}</p>
       <div class="actions-row wrap">
         <a class="secondary-link" href="${buildSelectionUrl('/outline', project?.project_id || '', { volumeIndex: 1, chapterIndex: 1 })}">去总纲页面</a>
         <a class="secondary-link" href="${buildSelectionUrl('/chapter-plan', project?.project_id || '', selection)}">去章节计划页面</a>
@@ -149,18 +152,18 @@ function renderSelection(snapshot, selection) {
       <div class="form-grid">
         <div class="field">
           <label for="volume-index-select">卷序号</label>
-          <select id="volume-index-select" name="volume_index">
-            ${volumeOptions.map((value) => `<option value="${value}" ${value === selection.volumeIndex ? 'selected' : ''}>第 ${value} 卷</option>`).join('')}
+          <select id="volume-index-select" name="volume_index" ${hasVolumeOptions ? '' : 'disabled'}>
+            ${renderSelectionOptions(volumeOptions, selection.volumeIndex, '暂无可选卷条目')}
           </select>
         </div>
         <div class="field">
-          <label for="chapter-index-select">章节序号</label>
-          <select id="chapter-index-select" name="chapter_index">
-            ${chapterOptions.map((value) => `<option value="${value}" ${value === selection.chapterIndex ? 'selected' : ''}>第 ${value} 章</option>`).join('')}
+          <label for="chapter-index-select">章节条目</label>
+          <select id="chapter-index-select" name="chapter_index" ${hasChapterOptions ? '' : 'disabled'}>
+            ${renderSelectionOptions(chapterOptions, selection.chapterIndex, '暂无可选章节条目')}
           </select>
         </div>
       </div>
-      <p class="muted">章节计划只处理当前章，按钮会依赖当前卷的粗章纲条目。</p>
+      <p class="muted">${!hasVolumeOptions ? '暂无可选卷条目，请先在总纲页面生成粗卷纲。' : hasChapterOptions ? '章节计划只处理当前章，按钮会依赖当前卷的粗章纲条目。' : '当前卷暂无可选章节条目，请先在卷纲页面生成粗章纲。'}</p>
       <div class="actions-row wrap">
         <a class="secondary-link" href="${buildSelectionUrl('/outline', project?.project_id || '', selection)}">去总纲页面</a>
         <a class="secondary-link" href="${buildSelectionUrl('/volume-outline', project?.project_id || '', selection)}">去卷纲页面</a>
@@ -170,9 +173,10 @@ function renderSelection(snapshot, selection) {
 
   selectionPanel.querySelectorAll('select').forEach((control) => {
     control.addEventListener('change', () => {
+      const volumeChanged = control.getAttribute('name') === 'volume_index';
       const nextSelection = { ...selection };
       nextSelection.volumeIndex = Number(selectionPanel.querySelector('[name="volume_index"]')?.value || selection.volumeIndex || 1);
-      nextSelection.chapterIndex = Number(selectionPanel.querySelector('[name="chapter_index"]')?.value || selection.chapterIndex || 1);
+      nextSelection.chapterIndex = volumeChanged ? 1 : Number(selectionPanel.querySelector('[name="chapter_index"]')?.value || selection.chapterIndex || 1);
       reloadWithSelection(nextSelection).catch((error) => renderNotice(workspace, error.message, 'error'));
     });
   });
@@ -201,6 +205,7 @@ function renderStepCard(step, selection) {
   const fields = (meta.fields || []).map((field) => ({ ...field, stepKey: step }));
   const primaryFields = fields.filter((field) => !field.advanced);
   const advancedFields = fields.filter((field) => field.advanced);
+  const fieldContext = { project, snapshot: currentSnapshot, selection: stepSelection };
 
   return `
     <section class="workspace-card">
@@ -216,13 +221,13 @@ function renderStepCard(step, selection) {
         <div>
           <form class="workspace-form" data-step-form="${step}">
             <div class="form-grid">
-              ${primaryFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, stepSelection))).join('')}
+              ${primaryFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, stepSelection), fieldContext)).join('')}
             </div>
             ${advancedFields.length ? `
               <details class="advanced-panel">
                 <summary>高级设置</summary>
                 <div class="form-grid compact-grid">
-                  ${advancedFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, stepSelection))).join('')}
+                  ${advancedFields.map((field) => renderField(field, getFieldDisplayValue(field, project, currentSnapshot, stepSelection), fieldContext)).join('')}
                 </div>
               </details>
             ` : ''}
@@ -263,17 +268,6 @@ function renderWorkspace(selection) {
     if (step === 'chapter_plan') {
       hydrateChapterPlanDefaults(form, currentSnapshot);
     }
-
-    form.querySelectorAll('[name="volume_index"], [name="chapter_index"]').forEach((control) => {
-      control.addEventListener('change', () => {
-        const nextSelection = { ...selection };
-        const formVolumeIndex = Number(form.elements.namedItem('volume_index')?.value || selection.volumeIndex || 1) || 1;
-        const formChapterIndex = Number(form.elements.namedItem('chapter_index')?.value || selection.chapterIndex || 1) || 1;
-        nextSelection.volumeIndex = formVolumeIndex;
-        nextSelection.chapterIndex = formChapterIndex;
-        reloadWithSelection(nextSelection).catch((error) => renderNotice(workspace, error.message, 'error'));
-      });
-    });
 
     form.addEventListener('click', async (event) => {
       const button = event.target.closest('[data-ai-complete]');
@@ -409,7 +403,8 @@ async function loadPage() {
   currentTasks = tasks;
 
   const selection = clampScopeSelection(snapshot, readScopeSelectionFromUrl(), {
-    getChapterCountForVolume: extractChapterCount,
+    getVolumeCount: getSelectableVolumeCount,
+    getChapterCountForVolume: getSelectableChapterCount,
   });
   syncScopeSelectionToUrl(selection);
   renderProjectMini(snapshot, selection);

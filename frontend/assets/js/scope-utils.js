@@ -77,9 +77,14 @@ function getDefaultChapterCount(snapshot) {
   return getProjectChapterCount(snapshot);
 }
 
-export function clampScopeSelection(snapshot, selection = {}, { getChapterCountForVolume } = {}) {
+export function clampScopeSelection(snapshot, selection = {}, { getChapterCountForVolume, getVolumeCount } = {}) {
   const normalized = normalizeScopeSelection(selection);
-  const volumeIndex = Math.min(normalized.volumeIndex, getProjectVolumeCount(snapshot));
+  const volumeResolver = getVolumeCount || getProjectVolumeCount;
+  const resolvedVolumeCount = Number(volumeResolver(snapshot));
+  const volumeCount = Number.isFinite(resolvedVolumeCount) && resolvedVolumeCount > 0
+    ? Math.floor(resolvedVolumeCount)
+    : getProjectVolumeCount(snapshot);
+  const volumeIndex = Math.min(normalized.volumeIndex, volumeCount);
   const chapterResolver = getChapterCountForVolume || getDefaultChapterCount;
   const chapterCount = Math.max(Number(chapterResolver(snapshot, volumeIndex)) || 1, 1);
   const chapterIndex = Math.min(normalized.chapterIndex, chapterCount);
