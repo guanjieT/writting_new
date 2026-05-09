@@ -54,6 +54,7 @@ uvicorn novel_agent.main:app --reload --host 127.0.0.1 --port 8001
 | `NOVEL_AGENT_DATA_DIR` | 数据目录 | `./data` |
 | `NOVEL_AGENT_PROMPTS_DIR` | prompt 目录 | `./prompts` |
 | `NOVEL_AGENT_PROJECTS_DIR` | 项目 JSON 目录 | `./data/projects` |
+| `NOVEL_AGENT_TASKS_DIR` | 任务 JSON 目录 | `./data/tasks` |
 | `NOVEL_AGENT_AUDIT_LOG` | 审计日志 JSONL | `./data/audit/events.jsonl` |
 | `NOVEL_AGENT_NAME` | 应用名称 | `Novel Agent Clean` |
 | `NOVEL_AGENT_HOST` | 启动监听地址 | `127.0.0.1` |
@@ -67,6 +68,7 @@ uvicorn novel_agent.main:app --reload --host 127.0.0.1 --port 8001
 | `NOVEL_AGENT_DEFAULT_TEMPERATURE` | 默认温度 | `0.7` |
 | `NOVEL_AGENT_DEFAULT_MAX_TOKENS` | 默认输出长度 | `1200` |
 | `NOVEL_AGENT_ENABLE_AUDIT` | 是否启用审计 | `true` |
+| `NOVEL_AGENT_REQUIRE_PROMPT_FILES` | 启动时是否要求所有 prompt 文件存在 | `true` |
 
 ## 目录结构
 
@@ -128,9 +130,11 @@ novel_agent_clean/
 | [novel_agent/config.py](novel_agent/config.py) | 读取环境变量并生成统一配置 | `AppConfig`，`load_config(base_dir=None)` |
 | [novel_agent/domain.py](novel_agent/domain.py) | 核心领域模型、枚举、协议、异常 | `ProjectInput`、`ArtifactSummary`、`Artifact`、`NovelProject`、`AgentContext`、`AgentOutput`、`TaskRecord`、`AuditEvent`、`WorkflowStep`、`TaskStatus`、`ProjectNotFoundError`、`TaskNotFoundError`、`UnsupportedStepError`、`WorkflowOrderError` |
 | [novel_agent/workflow_spec.py](novel_agent/workflow_spec.py) | 统一工作流顺序与依赖定义 | `WORKFLOW_STEPS`、`workflow_spec()`、`workflow_dependency_map()`、`workflow_label_map()` |
-| [novel_agent/infrastructure.py](novel_agent/infrastructure.py) | 文件仓储、Prompt 存储、审计落盘、任务内存存储、LLM 适配器 | `FileProjectRepository`、`FilePromptStore`、`FileAuditSink`、`MemoryTaskStore`、`MockLLMProvider`、`OpenAICompatibleProvider` |
+| [novel_agent/infrastructure.py](novel_agent/infrastructure.py) | 文件仓储、Prompt 存储、审计落盘、任务存储、LLM 适配器 | `FileProjectRepository`、`FilePromptStore`、`FileAuditSink`、`MemoryTaskStore`、`FileTaskStore`、`MockLLMProvider`、`OpenAICompatibleProvider` |
 | [novel_agent/context_builder.py](novel_agent/context_builder.py) | 分阶段上下文装配与字段补全上下文压缩 | `build_generation_context()`、`build_completion_context()` |
-| [novel_agent/services.py](novel_agent/services.py) | 业务服务层，负责编排存储、LLM 和任务 | `PromptService`、`LLMService`、`ProjectService`、`AuditService`、`TaskService`、`artifact_excerpt()`、`compact_artifact_context()`、`compact_artifacts_context()`、`build_artifact()`、`agent_context()` |
+| [novel_agent/services.py](novel_agent/services.py) | 业务服务层，负责编排存储、LLM 和任务 | `PromptService`、`LLMService`、`ProjectService`、`AuditService`、`TaskService`、`artifact_excerpt()`、`compact_artifact_context()`、`compact_artifacts_context()`、`build_artifact()`、`build_project_progress()`、`build_project_manuscript()`、`agent_context()` |
+| [novel_agent/quality.py](novel_agent/quality.py) | 章节基础质量报告 | `build_quality_report()` |
+| [novel_agent/agent_helpers.py](novel_agent/agent_helpers.py) | Agent 共用上下文辅助函数 | `build_outline_targets_json()`、`artifact_prompt_context()`、`chapter_plan_focus_from_context()` |
 | [novel_agent/agents.py](novel_agent/agents.py) | Agent 定义，负责把项目上下文翻译成 prompt 并调用模型 | `AgentDependencies`、`BaseAgent`、`RequirementAgent`、`StoryBibleAgent`、`CharacterAgent`、`OutlineAgent`、`VolumeOutlineAgent`、`ChapterPlanAgent`、`ChapterAgent`、`RevisionAgent`、`ConsistencyAgent`、`MemoryAgent`、`build_agent_registry()` |
 | [novel_agent/orchestrator.py](novel_agent/orchestrator.py) | 工作流编排器，负责 step 路由、项目状态更新、审计 | `NovelOrchestrator.build()`、`get_project()`、`list_projects()`、`dispatch()`、`create_project()`、`project_snapshot()` |
 | [novel_agent/container.py](novel_agent/container.py) | 依赖注入容器，统一组装全部服务 | `AppContainer`、`build_container()`、`build_llm_provider()` |
@@ -140,7 +144,7 @@ novel_agent_clean/
 | [novel_agent/api/routes/frontend.py](novel_agent/api/routes/frontend.py) | 前端页面路由 | `GET /`、`GET /workflow`、`GET /outline`、`GET /volume-outline`、`GET /chapter-plan`、`GET /review` |
 | [novel_agent/api/routes/workflow.py](novel_agent/api/routes/workflow.py) | 工作流规范接口 | `GET /workflow/spec` |
 | [novel_agent/api/routes/health.py](novel_agent/api/routes/health.py) | 健康检查路由 | `GET /health` |
-| [novel_agent/api/routes/projects.py](novel_agent/api/routes/projects.py) | 项目 CRUD、基础设定更新、模块删除和快照 | `POST /projects`、`PUT /projects/{project_id}`、`GET /projects`、`GET /projects/{project_id}`、`GET /projects/{project_id}/snapshot`、`DELETE /projects/{project_id}/artifacts/{artifact_key}` |
+| [novel_agent/api/routes/projects.py](novel_agent/api/routes/projects.py) | 项目 CRUD、基础设定更新、模块删除、快照、成稿导出和质量报告 | `POST /projects`、`PUT /projects/{project_id}`、`GET /projects`、`GET /projects/{project_id}`、`GET /projects/{project_id}/snapshot`、`GET /projects/{project_id}/exports/manuscript`、`GET /projects/{project_id}/quality-report`、`DELETE /projects/{project_id}/artifacts/{artifact_key}` |
 | [novel_agent/api/routes/ai.py](novel_agent/api/routes/ai.py) | 字段级 AI 补全接口 | `POST /projects/{project_id}/field-completion` |
 | [novel_agent/api/routes/planning.py](novel_agent/api/routes/planning.py) | 卷纲与章节计划入口 | `POST /projects/{project_id}/rough-volume-outline`、`POST /projects/{project_id}/volume-outline`、`POST /projects/{project_id}/rough-chapter-plan`、`POST /projects/{project_id}/chapter-plan` |
 | [novel_agent/api/routes/workflow_steps.py](novel_agent/api/routes/workflow_steps.py) | 基础步骤入口和任务查询 | `POST /projects/{project_id}/requirements`、`story-bible`、`characters`、`outline`、`chapters`、`revision`、`consistency`、`memory`、`GET /projects/{project_id}/tasks`、`GET /tasks/{task_id}`、`POST /tasks/{task_id}/cancel` |
@@ -178,7 +182,9 @@ novel_agent_clean/
 - `FileAuditSink(audit_log_path)`
   - `audit_log_path`：JSONL 审计日志文件路径。
 - `MemoryTaskStore()`
-  - 无参数，纯内存任务仓储。
+  - 无参数，测试和临时场景使用的纯内存任务仓储。
+- `FileTaskStore(tasks_dir)`
+  - `tasks_dir`：任务 JSON 文件目录，服务默认使用的持久化任务仓储。
 - `MockLLMProvider.complete(prompt, system_prompt='', temperature=0.7, max_tokens=1200, metadata=None)`
   - `prompt`：用户提示词。
   - `system_prompt`：系统提示词。

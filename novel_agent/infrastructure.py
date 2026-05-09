@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from json import JSONDecodeError
 import threading
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from uuid import uuid4
 
-from .domain import AuditEvent, AuditSink, LLMProvider, NovelProject, ProjectRepository, PromptStore, TaskRecord, TaskStore, TaskStatus
+from .domain import AuditEvent, AuditSink, LLMProvider, NovelProject, ProjectRepository, PromptStore, TaskRecord, TaskStore, TaskStatus, utc_now
 
 
 def _safe_key(value: str) -> str:
@@ -18,55 +20,82 @@ def _safe_key(value: str) -> str:
     return value
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    temp_path.write_text(content, encoding="utf-8")
+    os.replace(temp_path, path)
+
+
 class FileProjectRepository(ProjectRepository):
     def __init__(self, projects_dir: str | Path):
         self.projects_dir = Path(projects_dir)
         self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
 
     def _path(self, project_id: str) -> Path:
         return self.projects_dir / f"{_safe_key(project_id)}.json"
 
     def list(self) -> list[NovelProject]:
-        items: list[NovelProject] = []
-        for path in sorted(self.projects_dir.glob("*.json")):
-            items.append(NovelProject.model_validate_json(path.read_text(encoding="utf-8")))
-        return items
+        with self._lock:
+            items: list[NovelProject] = []
+            for path in sorted(self.projects_dir.glob("*.json")):
+                items.append(NovelProject.model_validate_json(path.read_text(encoding="utf-8")))
+            return items
 
     def get(self, project_id: str) -> NovelProject | None:
-        path = self._path(project_id)
-        if not path.exists():
-            return None
-        return NovelProject.model_validate_json(path.read_text(encoding="utf-8"))
+        with self._lock:
+            path = self._path(project_id)
+            if not path.exists():
+                return None
+            return NovelProject.model_validate_json(path.read_text(encoding="utf-8"))
 
     def save(self, project: NovelProject) -> NovelProject:
-        path = self._path(project.project_id)
-        path.write_text(project.model_dump_json(indent=2), encoding="utf-8")
-        return project
+        with self._lock:
+            path = self._path(project.project_id)
+            _atomic_write_text(path, project.model_dump_json(indent=2))
+            return project
 
     def delete(self, project_id: str) -> NovelProject | None:
-        path = self._path(project_id)
-        if not path.exists():
-            return None
-        project = NovelProject.model_validate_json(path.read_text(encoding="utf-8"))
-        path.unlink()
-        return project
+        with self._lock:
+            path = self._path(project_id)
+            if not path.exists():
+                return None
+            project = NovelProject.model_validate_json(path.read_text(encoding="utf-8"))
+            path.unlink()
+            return project
 
 
 class FilePromptStore(PromptStore):
     DEFAULT_TEMPLATES: dict[str, str] = {
-        "requirements": "你是小说需求分析助手。根据项目输入和当前需求表单，生成需求正文，并同步输出结构化字段。\n\n要求：\n- 只输出 JSON。\n- content: 纯文本字符串正文，允许分段，不要放对象或数组。\n- overview: 一两句概括这一阶段产物的作用。\n- key_facts: 事实性条目，适合给后续步骤继承。\n- constraints: 不能改的边界。\n- open_questions: 后续还要接着处理的点。\n- best_for_reason: 说明这份内容为什么适合给下游步骤使用。\n- 如果某项为空，输出空字符串或空数组，不要编造。\n\n项目：{project_summary}\n项目输入：{input_json}\n项目简报：{project_brief_json}\n当前需求表单：{context_json}\n\nJSON：",
-        "story_bible": "你是世界观设计助手。请生成世界规则、核心设定、冲突结构与可持续展开点，并同步输出结构化字段。\n\n要求：\n- 只输出 JSON。\n- content: 纯文本字符串正文，不要放对象或数组。\n- overview: 一两句概括这一阶段产物的作用。\n- key_facts: 事实性条目，适合给后续步骤继承。\n- constraints: 不能改的边界。\n- open_questions: 后续还要接着处理的点。\n- best_for_reason: 说明这份内容为什么适合给下游步骤使用。\n- 如果某项为空，输出空字符串或空数组，不要编造。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "characters": "你是角色框架设计助手。请先固定男女主、终极反派和少数必要核心角色，再为后续剧情预留可生长的角色槽位，不要一次性锁死全部角色，并同步输出结构化字段。\n\n要求：\n- 只输出 JSON。\n- content: 纯文本字符串正文，不要放对象或数组。\n- overview: 一两句概括这一阶段产物的作用。\n- key_facts: 事实性条目，适合给后续步骤继承。\n- constraints: 不能改的边界。\n- open_questions: 后续还要接着处理的点。\n- best_for_reason: 说明这份内容为什么适合给下游步骤使用。\n- 核心角色只保留必须稳定的角色；其余角色优先以槽位或候选形式表达。\n- 如果当前输入只够确定少数核心角色，就明确说明哪些角色暂缓确定。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n角色框架：{character_frame_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "outline": "你是小说总纲助手。请先生成全书总纲，输出必须以结构化字段为主体。content 只是简短摘要，不要承载主数据。\n\n要求：\n- 只输出 JSON。\n- 顶层必须包含 content、overview、key_facts、constraints、open_questions、best_for_reason、structured。\n- content 只写 3~6 行的全书摘要，不要重复 structured 里的字段。\n- structured 是主体，必须包含 story_arcs、global_goals、main_conflicts、ending_direction、volume_plan_hints。\n- 这些核心键不得省略；缺失时用空字符串、空数组或空对象。\n- story_arcs 用于描述全书主弧线与阶段推进。\n- volume_plan_hints 用于提示后续卷级拆分，但不要写成完整卷纲。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n总纲目标参数：{outline_targets_json}\n步骤输入：{step_payload_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "rough_volume_outline": "你是小说粗卷纲助手。请基于总纲和项目目标，生成全书所有卷的粗略纲要。必须按卷分段输出，structured 才是主体，content 只保留整卷摘要。\n\n要求：\n- 只输出 JSON。\n- 顶层必须包含 content、overview、key_facts、constraints、open_questions、best_for_reason、structured。\n- structured 必须包含 volumes。\n- volumes 是数组，每个元素必须包含 volume_index、title、summary、goal、main_conflict、ending_hook、target_chapter_count、target_words。\n- 每个卷条目都要短，title 简短，summary 1~2 句，goal 一句话，main_conflict 一句话，ending_hook 一句话。\n- 不要展开成完整卷纲，不要写成章节细纲。\n- content 只能写全书卷级规划摘要，不能重复完整 volumes 列表。\n- 如果某项为空，输出空字符串或空数组，不要省略键。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n总纲目标参数：{outline_targets_json}\n步骤输入：{step_payload_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "volume_outline": "你是小说卷纲助手。请基于总纲摘要和当前卷对应的粗卷纲，生成当前卷的完整卷纲。structured 才是主体，content 只保留当前卷摘要。\n\n要求：\n- 只输出 JSON。\n- 顶层必须包含 content、overview、key_facts、constraints、open_questions、best_for_reason、structured。\n- structured 必须包含 volume_index、title、summary、goal、main_conflict、ending_hook、target_chapter_count、target_words、arc_segments。\n- arc_segments 用于描述卷内整体结构和阶段推进，不要展开成每章的细纲。\n- content 只是当前卷摘要，不能把 arc_segments 重复写一遍。\n- 如果某项为空，输出空字符串或空数组，不要省略键。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n前置粗卷纲摘要：{parent_artifact_json}\n步骤输入：{step_payload_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "rough_chapter_plan": "你是小说粗章纲助手。请基于当前卷的完整卷纲，默认一次性生成整卷全部章节的粗略章节计划。structured 才是主体，content 只保留整卷摘要，不要重复章节列表。\n\n要求：\n- 只输出 JSON。\n- 顶层必须包含 content、overview、key_facts、constraints、open_questions、best_for_reason、structured。\n- structured 必须包含 volume_index、total_target_chapters、chapters。\n- chapters 必须覆盖整卷全部章节，chapter_index 连续，不得跳号、漏章、重复。\n- 每章只保留紧凑骨架信息：title、summary、chapter_type、pov_character、main_event、conflict、hook、target_words。\n- title 必须简短。summary 只允许 1~2 句。main_event、conflict、hook 都必须是一句话。\n- 不要写 scene 级展开，不要写长段分析，不要加冗余说明。\n- content 只写整卷章节骨架摘要，不得复制章节列表。\n- 如果某项为空，输出空字符串或空数组，不要省略键。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n前置卷纲摘要：{parent_artifact_json}\n步骤输入：{step_payload_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "chapter_plan": "你是章节计划助手。请基于当前卷的粗章纲，生成当前章的完整章节计划。structured 才是主体，content 只保留当前章摘要。\n\n要求：\n- 只输出 JSON。\n- 顶层必须包含 content、overview、key_facts、constraints、open_questions、best_for_reason、structured。\n- structured 必须包含 volume_index、chapter_index、title、summary、chapter_type、pov_character、main_event、conflict、hook、target_words、min_words、characters、introduced_characters、scene_summaries、continuity_notes、writing_notes。\n- 这一阶段可以展开详细场景拆解、细节伏笔和写作提示，但这些内容必须放在 structured 里。\n- content 只是当前章的简短摘要，不要重复 scene_summaries 和 writing_notes。\n- 如果某项为空，输出空字符串或空数组，不要省略键。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n前置粗章纲摘要：{parent_artifact_json}\n步骤输入：{step_payload_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "chapter": "你是章节写作助手。请基于当前章的章节计划生成正文草稿，保证节奏、冲突与场景推进，并同步输出结构化字段。\n\n要求：\n- 只输出 JSON。\n- content: 纯文本字符串正文，不要放对象或数组。\n- overview: 一两句概括这一阶段产物的作用。\n- key_facts: 事实性条目，适合给后续步骤继承。\n- constraints: 不能改的边界。\n- open_questions: 后续还要接着处理的点。\n- best_for_reason: 说明这份内容为什么适合给下游步骤使用。\n- 必须优先承接“当前章节计划”，不要改写本章目标、场景顺序或关键约束。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n当前章节计划：{parent_artifact_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "revision": "你是修订助手。请在保留核心内容的前提下，重写并优化表达、结构与一致性，并同步输出结构化字段。\n\n要求：\n- 只输出 JSON。\n- content: 纯文本字符串正文，不要放对象或数组。\n- overview: 一两句概括这一阶段产物的作用。\n- key_facts: 事实性条目，适合给后续步骤继承。\n- constraints: 不能改的边界。\n- open_questions: 后续还要接着处理的点。\n- best_for_reason: 说明这份内容为什么适合给下游步骤使用。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "consistency": "你是一致性检查助手。请指出设定冲突、时间线冲突与逻辑漏洞，并给出修复建议，同时同步输出结构化字段。\n\n要求：\n- 只输出 JSON。\n- content: 纯文本字符串正文，不要放对象或数组。\n- overview: 一两句概括这一阶段产物的作用。\n- key_facts: 事实性条目，适合给后续步骤继承。\n- constraints: 不能改的边界。\n- open_questions: 后续还要接着处理的点。\n- best_for_reason: 说明这份内容为什么适合给下游步骤使用。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "memory": "你是记忆整理助手。请抽取稳定设定、未决问题与后续写作提醒，并同步输出结构化字段。\n\n要求：\n- 只输出 JSON。\n- content: 纯文本字符串正文，不要放对象或数组。\n- overview: 一两句概括这一阶段产物的作用。\n- key_facts: 事实性条目，适合给后续步骤继承。\n- constraints: 不能改的边界。\n- open_questions: 后续还要接着处理的点。\n- best_for_reason: 说明这份内容为什么适合给下游步骤使用。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n当前上下文：{context_json}\n已有产物摘要：{artifacts_json}\n\nJSON：",
-        "field_completion": "你是小说参数补全助手。请根据字段上下文中的关键字段信息、同阶段表单和直接上游产物，补全或优化当前字段内容。\n\n要求：\n- 只输出可直接填入表单的内容，不要解释。\n- 字段类型为数字时，只输出数字。\n- 字段类型为复选框时，只输出 true 或 false。\n- 其他字段尽量简洁，优先输出可执行、可粘贴的内容。\n- 不要重复当前字段已经给出的内容；优先利用关键字段信息决定答案。\n\n项目：{project_summary}\n项目简报：{project_brief_json}\n步骤：{step_label}\n步骤说明：{step_description}\n字段：{field_label} ({field_type})\n字段提示：{field_placeholder}\n当前值：{current_value}\n字段上下文：{field_context_json}\n关键字段上下文：{reference_fields_json}\n同阶段表单（当前字段已移除）：{step_payload_json}\n直接上游步骤：{direct_dependency_steps_json}\n直接上游产物：{direct_dependency_artifacts_json}\n项目输入：{input_json}\n\n补全结果：",
+        "requirements": "[请使用 prompts/requirements.md - 此文件仅为 fallback]",
+        "story_bible": "[请使用 prompts/story_bible.md - 此文件仅为 fallback]",
+        "characters": "[请使用 prompts/characters.md - 此文件仅为 fallback]",
+        "outline": "[请使用 prompts/outline.md - 此文件仅为 fallback]",
+        "rough_volume_outline": "[请使用 prompts/rough_volume_outline.md - 此文件仅为 fallback]",
+        "volume_outline": "[请使用 prompts/volume_outline.md - 此文件仅为 fallback]",
+        "rough_chapter_plan": "[请使用 prompts/rough_chapter_plan.md - 此文件仅为 fallback]",
+        "chapter_plan": "[请使用 prompts/chapter_plan.md - 此文件仅为 fallback]",
+        "chapter": (
+            "你是章节写作助手。请严格承接当前章节计划，把它写成可直接阅读的小说正文。\n\n"
+            "要求：\n"
+            "- 只输出 JSON。\n"
+            "- content 必须是完整正文，不要写提纲、摘要或说明。\n"
+            "- 必须优先承接“当前章节计划”，不要改写本章目标、场景顺序或关键约束。\n"
+            "- 正文长度至少接近 target_words_85，宁可略长，不可明显偏短。\n\n"
+            "项目：{project_summary}\n"
+            "项目简报：{project_brief_json}\n"
+            "当前章节计划：{parent_artifact_json}\n"
+            "当前章节计划结构化重点：{chapter_plan_focus_json}\n"
+            "当前上下文：{context_json}\n"
+            "已有产物摘要：{artifacts_json}\n"
+            "最低正文长度参考：{target_words_85}\n\n"
+            "JSON："
+        ),
+        "revision": "[请使用 prompts/revision.md - 此文件仅为 fallback]",
+        "consistency": "[请使用 prompts/consistency.md - 此文件仅为 fallback]",
+        "memory": "[请使用 prompts/memory.md - 此文件仅为 fallback]",
+        "field_completion": "[请使用 prompts/field_completion.md - 此文件仅为 fallback]",
     }
 
     def __init__(self, prompts_dir: str | Path):
@@ -79,6 +108,19 @@ class FilePromptStore(PromptStore):
         if template_name not in self.DEFAULT_TEMPLATES:
             raise FileNotFoundError(f"missing prompt template: {template_name}")
         return self.DEFAULT_TEMPLATES[template_name]
+
+    def missing_templates(self, template_names: list[str]) -> list[str]:
+        return [
+            template_name
+            for template_name in template_names
+            if not (self.prompts_dir / f"{template_name}.md").exists()
+        ]
+
+    def validate_required(self, template_names: list[str]) -> None:
+        missing = self.missing_templates(template_names)
+        if missing:
+            formatted = ", ".join(f"{template}.md" for template in missing)
+            raise FileNotFoundError(f"missing required prompt templates in {self.prompts_dir}: {formatted}")
 
 
 def _extract_prompt_int(prompt: str, key: str, default: int) -> int:
@@ -264,6 +306,74 @@ class MemoryTaskStore(TaskStore):
             for task_id in task_ids:
                 self._tasks.pop(task_id, None)
         return len(task_ids)
+
+
+class FileTaskStore(TaskStore):
+    def __init__(self, tasks_dir: str | Path):
+        self.tasks_dir = Path(tasks_dir)
+        self.tasks_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        self._mark_interrupted_tasks()
+
+    def _path(self, task_id: str) -> Path:
+        return self.tasks_dir / f"{_safe_key(task_id)}.json"
+
+    def _read_path(self, path: Path) -> TaskRecord:
+        return TaskRecord.model_validate_json(path.read_text(encoding="utf-8"))
+
+    def _write(self, task: TaskRecord) -> TaskRecord:
+        _atomic_write_text(self._path(task.task_id), task.model_dump_json(indent=2))
+        return task
+
+    def _mark_interrupted_tasks(self) -> None:
+        with self._lock:
+            for path in sorted(self.tasks_dir.glob("*.json")):
+                task = self._read_path(path)
+                if task.status not in {TaskStatus.PENDING, TaskStatus.RUNNING}:
+                    continue
+                task.status = TaskStatus.FAILED
+                task.error = task.error or "task interrupted by service restart"
+                task.finished_at = task.finished_at or utc_now()
+                self._write(task)
+
+    def create(self, task: TaskRecord) -> TaskRecord:
+        with self._lock:
+            return self._write(task).model_copy(deep=True)
+
+    def get(self, task_id: str) -> TaskRecord | None:
+        with self._lock:
+            path = self._path(task_id)
+            if not path.exists():
+                return None
+            return self._read_path(path).model_copy(deep=True)
+
+    def list(self, project_id: str | None = None) -> list[TaskRecord]:
+        with self._lock:
+            tasks = [self._read_path(path) for path in sorted(self.tasks_dir.glob("*.json"))]
+        if project_id is not None:
+            tasks = [task for task in tasks if task.project_id == project_id]
+        return [task.model_copy(deep=True) for task in tasks]
+
+    def update(self, task: TaskRecord) -> TaskRecord:
+        with self._lock:
+            return self._write(task).model_copy(deep=True)
+
+    def delete(self, task_id: str) -> None:
+        with self._lock:
+            path = self._path(task_id)
+            if path.exists():
+                path.unlink()
+
+    def delete_by_project(self, project_id: str) -> int:
+        with self._lock:
+            paths = [
+                path
+                for path in sorted(self.tasks_dir.glob("*.json"))
+                if self._read_path(path).project_id == project_id
+            ]
+            for path in paths:
+                path.unlink()
+            return len(paths)
 
 
 class MockLLMProvider(LLMProvider):

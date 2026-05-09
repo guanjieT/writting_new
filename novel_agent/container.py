@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from .agents import AgentDependencies
 from .config import AppConfig, load_config
 from .domain import LLMProvider
-from .infrastructure import FileAuditSink, FileProjectRepository, FilePromptStore, MemoryTaskStore, MockLLMProvider, OpenAICompatibleProvider
+from .infrastructure import FileAuditSink, FileProjectRepository, FilePromptStore, FileTaskStore, MockLLMProvider, OpenAICompatibleProvider
 from .orchestrator import NovelOrchestrator
 from .services import AuditService, LLMService, ProjectService, PromptService, TaskService
+from .workflow_spec import WORKFLOW_STEPS
 
 
 def build_llm_provider(config: AppConfig) -> LLMProvider:
@@ -37,8 +38,10 @@ def build_container(config: AppConfig | None = None) -> AppContainer:
     resolved_config = config or load_config()
     project_repository = FileProjectRepository(resolved_config.projects_dir)
     prompt_store = FilePromptStore(resolved_config.prompts_dir)
+    if resolved_config.require_prompt_files:
+        prompt_store.validate_required([step.key for step in WORKFLOW_STEPS] + ["field_completion"])
     audit_sink = FileAuditSink(resolved_config.audit_log_path)
-    task_store = MemoryTaskStore()
+    task_store = FileTaskStore(resolved_config.tasks_dir)
     provider = build_llm_provider(resolved_config)
 
     prompt_service = PromptService(prompt_store)

@@ -15,6 +15,7 @@ def _submit_step(container, project_id: str, step: str, payload: dict) -> TaskRe
         project_id=project_id,
         task_name=step,
         scope=task_scope_from_payload(step, payload),
+        input_payload=payload,
         job=lambda: container.orchestrator.dispatch(project_id, step, payload).model_dump(mode="json"),
     )
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import PlainTextResponse
 
 from ...domain import NovelProject
+from ...quality import build_quality_report
+from ...services import build_project_manuscript
 from ..deps import get_container
 from ..schemas import ProjectCreateRequest, ProjectResponse
 
@@ -32,6 +35,18 @@ def update_project(project_id: str, payload: ProjectCreateRequest, container=Dep
 @router.get("/{project_id}/snapshot", response_model=dict[str, object])
 def project_snapshot(project_id: str, container=Depends(get_container)) -> dict[str, object]:
     return container.orchestrator.project_snapshot(project_id)
+
+
+@router.get("/{project_id}/exports/manuscript", response_class=PlainTextResponse)
+def export_project_manuscript(project_id: str, container=Depends(get_container)) -> str:
+    project = container.orchestrator.get_project(project_id)
+    return build_project_manuscript(project)
+
+
+@router.get("/{project_id}/quality-report", response_model=dict[str, object])
+def project_quality_report(project_id: str, container=Depends(get_container)) -> dict[str, object]:
+    project = container.orchestrator.get_project(project_id)
+    return build_quality_report(project)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)

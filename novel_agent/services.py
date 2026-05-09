@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+import re
 from typing import Any
 
-from .domain import AgentContext, AuditEvent, Artifact, ArtifactSummary, LLMProvider, NovelProject, ProjectInput, ProjectNotFoundError, ProjectRepository, PromptStore, TaskRecord, TaskStatus, TaskStore, WorkflowStep, utc_now
+from .domain import AgentContext, AuditEvent, Artifact, ArtifactSummary, KnowledgeItem, LLMProvider, NovelProject, ProjectInput, ProjectNotFoundError, ProjectRepository, PromptStore, TaskRecord, TaskStatus, TaskStore, WorkflowStep, new_id, utc_now
 from .workflow_spec import WORKFLOW_STEPS, workflow_dependency_map
 
 
@@ -129,7 +130,11 @@ class PromptService:
 
     def render(self, template_name: str, variables: Mapping[str, Any]) -> str:
         template = self.load(template_name)
-        return template.format(**variables)
+        return re.sub(
+            r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}",
+            lambda match: str(variables.get(match.group(1), match.group(0))),
+            template,
+        )
 
 
 @dataclass(frozen=True)
@@ -194,9 +199,67 @@ class ProjectService:
             affected.append(artifact_key)
         return affected
 
+    def _archive_replaced_artifact(self, project: NovelProject, artifact: Artifact) -> str | None:
+        current = project.artifacts.get(artifact.key)
+        if current is None:
+            return None
+        archived = current.model_copy(deep=True)
+        archived.metadata = {**archived.metadata, "state": "archived", "stale": True, "archived_at": utc_now().isoformat()}
+        project.artifact_history.setdefault(artifact.key, []).append(archived)
+        return str(current.metadata.get("version_id") or "")
+
+    def _versioned_artifact(self, project: NovelProject, artifact: Artifact) -> Artifact:
+        previous_version_id = self._archive_replaced_artifact(project, artifact)
+        metadata = {
+            **artifact.metadata,
+            "version_id": new_id("ver"),
+            "previous_version_id": previous_version_id or None,
+            "generated_at": utc_now().isoformat(),
+        }
+        return artifact.model_copy(update={"metadata": metadata}, deep=True)
+
+    def _record_knowledge(self, project: NovelProject, artifact: Artifact) -> None:
+        metadata = artifact.metadata or {}
+        step = str(metadata.get("step") or _artifact_step_key(artifact))
+        scope_kind = str(metadata.get("scope_kind") or "project")
+        volume_index = metadata.get("volume_index")
+        chapter_index = metadata.get("chapter_index")
+        summary = artifact.summary
+        source_groups = {
+            "fact": summary.key_facts,
+            "constraint": summary.constraints,
+            "open_question": summary.open_questions,
+        }
+        existing = {
+            (item.source_artifact_key, item.kind, item.text)
+            for item in project.knowledge_base
+        }
+        for kind, values in source_groups.items():
+            for value in values:
+                text = str(value).strip()
+                if not text:
+                    continue
+                marker = (artifact.key, kind, text)
+                if marker in existing:
+                    continue
+                project.knowledge_base.append(
+                    KnowledgeItem(
+                        source_artifact_key=artifact.key,
+                        source_step=step,
+                        kind=kind,
+                        text=text,
+                        scope_kind=scope_kind,
+                        volume_index=int(volume_index) if volume_index not in (None, "") else None,
+                        chapter_index=int(chapter_index) if chapter_index not in (None, "") else None,
+                    )
+                )
+                existing.add(marker)
+
     def register_generated_artifact(self, project_id: str, artifact: Artifact) -> tuple[NovelProject, list[str]]:
         project = self.get(project_id)
+        artifact = self._versioned_artifact(project, artifact)
         project.artifacts[artifact.key] = artifact
+        self._record_knowledge(project, artifact)
         step_value = str(artifact.metadata.get("step") or project.current_step.value)
         try:
             project.touch(WorkflowStep(step_value))
@@ -285,8 +348,9 @@ class TaskService:
         job: Callable[[], Any],
         *,
         scope: dict[str, Any] | None = None,
+        input_payload: dict[str, Any] | None = None,
     ) -> TaskRecord:
-        task = self.store.create(TaskRecord(project_id=project_id, task_name=task_name, **(scope or {})))
+        task = self.store.create(TaskRecord(project_id=project_id, task_name=task_name, input_payload=input_payload or {}, **(scope or {})))
         if self._deleted_task_ids is not None:
             self._deleted_task_ids.discard(task.task_id)
 
@@ -392,3 +456,106 @@ def agent_context(project_id: str, payload: Mapping[str, Any]) -> AgentContext:
         max_tokens=int(payload.get("max_tokens", 1200)),
         payload=dict(payload),
     )
+
+
+def build_project_progress(project: NovelProject) -> dict[str, Any]:
+    active_artifacts = [
+        artifact
+        for artifact in project.artifacts.values()
+        if not artifact.metadata.get("stale") and artifact.metadata.get("state") != "stale"
+    ]
+    target_volume_count = max(int(project.input.target_volume_count or 1), 1)
+    target_chapters_per_volume = max(int(project.input.target_chapters_per_volume or 1), 1)
+    volumes: list[dict[str, Any]] = []
+    completed_chapters = 0
+    planned_chapters = target_volume_count * target_chapters_per_volume
+
+    def has_step(step: str, *, volume_index: int | None = None, chapter_index: int | None = None) -> bool:
+        for artifact in active_artifacts:
+            metadata = artifact.metadata or {}
+            if metadata.get("step") != step:
+                continue
+            if volume_index is not None and int(metadata.get("volume_index") or 0) != volume_index:
+                continue
+            if chapter_index is not None and int(metadata.get("chapter_index") or 0) != chapter_index:
+                continue
+            return True
+        return False
+
+    for volume_index in range(1, target_volume_count + 1):
+        chapters: list[dict[str, Any]] = []
+        for chapter_index in range(1, target_chapters_per_volume + 1):
+            chapter_status = {
+                "chapter_index": chapter_index,
+                "chapter_plan": has_step("chapter_plan", volume_index=volume_index, chapter_index=chapter_index),
+                "chapter": has_step("chapter", volume_index=volume_index, chapter_index=chapter_index),
+                "revision": has_step("revision", volume_index=volume_index, chapter_index=chapter_index),
+                "consistency": has_step("consistency", volume_index=volume_index, chapter_index=chapter_index),
+                "memory": has_step("memory", volume_index=volume_index, chapter_index=chapter_index),
+            }
+            if chapter_status["chapter"]:
+                completed_chapters += 1
+            chapters.append(chapter_status)
+        volumes.append(
+            {
+                "volume_index": volume_index,
+                "volume_outline": has_step("volume_outline", volume_index=volume_index),
+                "rough_chapter_plan": has_step("rough_chapter_plan", volume_index=volume_index),
+                "chapters": chapters,
+            }
+        )
+
+    return {
+        "project_id": project.project_id,
+        "target_volume_count": target_volume_count,
+        "target_chapters_per_volume": target_chapters_per_volume,
+        "planned_chapters": planned_chapters,
+        "completed_chapters": completed_chapters,
+        "completion_ratio": completed_chapters / planned_chapters if planned_chapters else 0,
+        "project_steps": {
+            "requirements": has_step("requirements"),
+            "story_bible": has_step("story_bible"),
+            "characters": has_step("characters"),
+            "outline": has_step("outline"),
+            "rough_volume_outline": has_step("rough_volume_outline"),
+        },
+        "volumes": volumes,
+        "knowledge_items": len(project.knowledge_base),
+        "artifact_history_items": sum(len(items) for items in project.artifact_history.values()),
+    }
+
+
+def build_project_manuscript(project: NovelProject) -> str:
+    active_artifacts = [
+        artifact
+        for artifact in project.artifacts.values()
+        if not artifact.metadata.get("stale") and artifact.metadata.get("state") != "stale"
+    ]
+    chapter_artifacts: dict[tuple[int, int], Artifact] = {}
+    revision_artifacts: dict[tuple[int, int], Artifact] = {}
+    for artifact in active_artifacts:
+        metadata = artifact.metadata or {}
+        step = metadata.get("step")
+        if step not in {"chapter", "revision"}:
+            continue
+        try:
+            key = (int(metadata.get("volume_index") or 0), int(metadata.get("chapter_index") or 0))
+        except (TypeError, ValueError):
+            continue
+        if key[0] <= 0 or key[1] <= 0:
+            continue
+        if step == "revision":
+            revision_artifacts[key] = artifact
+        else:
+            chapter_artifacts[key] = artifact
+
+    ordered_keys = sorted(set(chapter_artifacts) | set(revision_artifacts))
+    lines = [f"# {project.input.title}", ""]
+    current_volume: int | None = None
+    for volume_index, chapter_index in ordered_keys:
+        if current_volume != volume_index:
+            current_volume = volume_index
+            lines.extend([f"## 第{volume_index}卷", ""])
+        artifact = revision_artifacts.get((volume_index, chapter_index)) or chapter_artifacts[(volume_index, chapter_index)]
+        lines.extend([f"### 第{chapter_index}章", "", artifact.content.strip(), ""])
+    return "\n".join(lines).rstrip() + "\n"

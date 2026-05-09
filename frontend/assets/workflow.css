@@ -1,0 +1,83 @@
+.phase-rail {
+  display: grid;
+  gap: 10px;
+}
+
+.phase-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--text);
+}
+
+.phase-step.active {
+  border-color: rgba(49, 94, 251, 0.38);
+  background: var(--accent-soft);
+}
+
+.phase-step span,
+.phase-step strong {
+  font-size: 14px;
+}
+
+.phase-step i {
+  grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4e9f4;
+}
+
+.phase-step b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.step-brief {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.step-brief div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+
+.step-brief span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.step-brief strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .step-brief {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .step-brief {
+    grid-template-columns: 1fr;
+  }
+}

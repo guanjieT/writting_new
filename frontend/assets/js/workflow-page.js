@@ -107,6 +107,91 @@ function chooseDefaultStep() {
   return unlocked || VISIBLE_STEPS[0];
 }
 
+function buildNextAction(snapshot) {
+  if (!snapshot) {
+    return null;
+  }
+  for (const step of VISIBLE_STEPS) {
+    const selection = selectionForStep(step, currentSelection);
+    const status = getStepStatus(step, snapshot, dependencyMap, currentTasks, selection);
+    if (status.text === '执行失败') {
+      return {
+        step,
+        tone: 'danger',
+        label: '先处理失败任务',
+        detail: `${getStepLabel(step, workflowSteps)} 最近一次执行失败。`,
+      };
+    }
+  }
+  for (const step of VISIBLE_STEPS) {
+    const selection = selectionForStep(step, currentSelection);
+    if (!getArtifactForStep(snapshot, step, selection) && isUnlocked(step, snapshot, dependencyMap, selection)) {
+      return {
+        step,
+        tone: step === 'chapter' ? 'accent' : 'warn',
+        label: step === currentStep ? '当前对象可执行' : `建议处理：${getStepLabel(step, workflowSteps)}`,
+        detail: getStepMeta(step).objectName || getStepMeta(step).label || step,
+      };
+    }
+  }
+  return {
+    step: 'consistency',
+    tone: 'success',
+    label: '当前上下文链路完整',
+    detail: '可以进入审查台查看质量报告或导出成稿。',
+  };
+}
+
+function renderNextAction(snapshot) {
+  const action = buildNextAction(snapshot);
+  if (!action) {
+    return '';
+  }
+  const scopeKind = getStepScopeKind(action.step);
+  const scopeText = scopeKind === 'chapter'
+    ? `第 ${currentSelection.volumeIndex} 卷 · 第 ${currentSelection.chapterIndex} 章`
+    : scopeKind === 'volume'
+      ? `第 ${currentSelection.volumeIndex} 卷`
+      : '全书';
+  return `
+    <div class="context-card subtle">
+      <div class="context-head">
+        <div>
+          <p class="eyebrow">建议下一步</p>
+          <h3>${escapeHtml(action.label)}</h3>
+        </div>
+        ${badge(scopeText, action.tone)}
+      </div>
+      <p class="muted">${escapeHtml(action.detail)}</p>
+      <div class="actions-row wrap">
+        <button type="button" class="secondary" data-jump-next-step="${escapeHtml(action.step)}">打开对象</button>
+        <a class="secondary-link" href="${withProjectQuery('/review', snapshot.project.project_id)}">审查台</a>
+      </div>
+    </div>
+  `;
+}
+
+function renderPhaseRail(snapshot) {
+  const groups = PAGE_STEP_GROUPS.workflow;
+  return `
+    <div class="phase-rail" aria-label="工作流阶段">
+      ${groups.map((group) => {
+        const done = group.steps.filter((step) => getArtifactForStep(snapshot, step, selectionForStep(step, currentSelection))).length;
+        const total = group.steps.length || 1;
+        const active = group.steps.includes(currentStep);
+        const percent = Math.round((done / total) * 100);
+        return `
+          <button type="button" class="phase-step ${active ? 'active' : ''}" data-phase-step="${escapeHtml(group.steps[0])}">
+            <span>${escapeHtml(group.label)}</span>
+            <strong>${done}/${total}</strong>
+            <i><b style="width:${percent}%"></b></i>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function renderProjectMini(snapshot) {
   if (!snapshot) {
     renderEmpty(projectMini, '请先回到项目台选择一个项目。');
@@ -129,8 +214,22 @@ function renderProjectMini(snapshot) {
         ${badge(`${project.input.target_chapters_per_volume} 章/卷`, 'soft')}
       </div>
     </div>
+    ${renderPhaseRail(snapshot)}
+    ${renderNextAction(snapshot)}
     ${renderSelectionCard(snapshot)}
   `;
+
+  projectMini.querySelectorAll('[data-jump-next-step], [data-phase-step]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      const step = event.currentTarget.getAttribute('data-jump-next-step') || event.currentTarget.getAttribute('data-phase-step');
+      if (!step) {
+        return;
+      }
+      currentStep = step;
+      setPreferredStep(PAGE_KEY, step);
+      renderPage();
+    });
+  });
 
   projectMini.querySelectorAll('[data-workflow-volume-index], [data-workflow-chapter-index]').forEach((control) => {
     control.addEventListener('change', () => {
@@ -141,6 +240,37 @@ function renderProjectMini(snapshot) {
       });
     });
   });
+}
+
+function renderStepBrief(step, selection) {
+  const meta = getStepMeta(step);
+  const dependencies = dependencyMap[step] || [];
+  const dependents = workflowSteps.filter((item) => (item.depends_on || []).includes(step)).map((item) => item.key);
+  const scopeKind = getStepScopeKind(step);
+  const scopeText = scopeKind === 'chapter'
+    ? `第 ${selection.volumeIndex} 卷 · 第 ${selection.chapterIndex} 章`
+    : scopeKind === 'volume'
+      ? `第 ${selection.volumeIndex} 卷`
+      : '全书';
+  const inputText = dependencies.length ? dependencies.map((dep) => getStepLabel(dep, workflowSteps)).join('、') : '项目基础设定';
+  const outputText = meta.objectName || meta.label || step;
+  const nextText = dependents.length ? dependents.map((dep) => getStepLabel(dep, workflowSteps)).join('、') : '审查与导出';
+  return `
+    <div class="step-brief">
+      <div><span>读取</span><strong>${escapeHtml(inputText)}</strong></div>
+      <div><span>产出</span><strong>${escapeHtml(outputText)}</strong></div>
+      <div><span>范围</span><strong>${escapeHtml(scopeText)}</strong></div>
+      <div><span>影响</span><strong>${escapeHtml(nextText)}</strong></div>
+    </div>
+  `;
+}
+
+function runButtonText(step, artifact, unlocked) {
+  if (!unlocked) {
+    return '等待前置完成';
+  }
+  const name = getStepMeta(step).objectName || getStepLabel(step, workflowSteps);
+  return `${artifact ? '重新生成' : '生成'}${name}`;
 }
 
 function renderStageNav() {
@@ -213,7 +343,7 @@ function buildStepForm(step, selection) {
       ` : ''}
       ${hiddenScopeInputs}
       <div class="actions-row wrap">
-        <button class="primary" type="submit" data-run-step="${step}" ${unlocked ? '' : 'disabled'} title="${escapeHtml(readinessMessage)}">${unlocked ? '执行当前对象' : '等待前置完成'}</button>
+        <button class="primary" type="submit" data-run-step="${step}" ${unlocked ? '' : 'disabled'} title="${escapeHtml(readinessMessage)}">${escapeHtml(runButtonText(step, scopedArtifact, unlocked))}</button>
         <button class="ghost" type="button" data-delete-step="${step}" ${scopedArtifact ? '' : 'disabled'}>删除当前产物</button>
         <span class="muted">删除会级联清理依赖此对象的下游内容。</span>
       </div>
@@ -244,6 +374,7 @@ function renderWorkspace() {
         </div>
         ${badge(status.text, status.tone)}
       </div>
+      ${renderStepBrief(step, stepSelection)}
       <div class="workspace-card-grid">
         <div>
           ${buildStepForm(step, stepSelection)}

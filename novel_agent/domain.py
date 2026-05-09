@@ -122,12 +122,26 @@ class Artifact(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class KnowledgeItem(BaseModel):
+    item_id: str = Field(default_factory=lambda: new_id("know"))
+    source_artifact_key: str
+    source_step: str = ""
+    kind: str
+    text: str
+    scope_kind: str = "project"
+    volume_index: int | None = None
+    chapter_index: int | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class NovelProject(BaseModel):
     project_id: str = Field(default_factory=lambda: new_id("proj"))
     input: ProjectInput
     current_step: WorkflowStep = WorkflowStep.CREATED
     status: WorkflowStep = WorkflowStep.CREATED
     artifacts: dict[str, Artifact] = Field(default_factory=dict)
+    artifact_history: dict[str, list[Artifact]] = Field(default_factory=dict)
+    knowledge_base: list[KnowledgeItem] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -165,6 +179,7 @@ class TaskRecord(BaseModel):
     scope_kind: str = "project"
     volume_index: int | None = None
     chapter_index: int | None = None
+    input_payload: dict[str, Any] = Field(default_factory=dict)
     status: TaskStatus = TaskStatus.PENDING
     created_at: datetime = Field(default_factory=utc_now)
     started_at: datetime | None = None

@@ -7,7 +7,7 @@ from typing import Any
 from .agents import AgentDependencies, BaseAgent, build_agent_registry
 from .domain import AgentOutput, Artifact, NovelProject, UnsupportedStepError, WorkflowOrderError, WorkflowStep
 from .workflow_spec import workflow_dependency_map
-from .services import AuditService, ProjectService, TaskService, agent_context, _artifact_scope_payload, _scope_matches
+from .services import AuditService, ProjectService, TaskService, agent_context, build_project_progress, _artifact_scope_payload, _scope_matches
 
 
 def _to_chinese_number(value: int) -> str:
@@ -108,6 +108,10 @@ class NovelOrchestrator:
         project.input = project_input
         if project.artifacts:
             project.artifacts.clear()
+        if project.artifact_history:
+            project.artifact_history.clear()
+        if project.knowledge_base:
+            project.knowledge_base.clear()
         project.touch(WorkflowStep.CREATED)
         removed_task_count = self.task_service.delete_project(project_id) if self.task_service is not None else 0
         self.project_service.save(project)
@@ -123,6 +127,12 @@ class NovelOrchestrator:
         return {
             "project": project.model_dump(mode="json"),
             "artifacts": {key: artifact.model_dump(mode="json") for key, artifact in project.artifacts.items()},
+            "artifact_history": {
+                key: [artifact.model_dump(mode="json") for artifact in artifacts]
+                for key, artifacts in project.artifact_history.items()
+            },
+            "knowledge_base": [item.model_dump(mode="json") for item in project.knowledge_base],
+            "progress": build_project_progress(project),
         }
 
     def _ensure_step_ready(self, project: NovelProject, step: str, payload: Mapping[str, Any]) -> None:

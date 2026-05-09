@@ -41,6 +41,7 @@ export const api = {
   completeField: (projectId, payload) => requestJson(`/projects/${encodeURIComponent(projectId)}/field-completion`, { method: 'POST', body: payload }),
   getProject: (projectId) => requestJson(`/projects/${encodeURIComponent(projectId)}`),
   getProjectSnapshot: (projectId) => requestJson(`/projects/${encodeURIComponent(projectId)}/snapshot`),
+  getQualityReport: (projectId) => requestJson(`/projects/${encodeURIComponent(projectId)}/quality-report`),
   listTasks: (projectId) => requestJson(`/projects/${encodeURIComponent(projectId)}/tasks`),
   getTask: (taskId) => requestJson(`/tasks/${encodeURIComponent(taskId)}`),
   cancelTask: (taskId) => requestJson(`/tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }),

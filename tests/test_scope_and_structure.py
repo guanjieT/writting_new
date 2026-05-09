@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from novel_agent.agents import BaseAgent, ChapterAgent
-from novel_agent.domain import AgentContext, Artifact, ArtifactSummary, NovelProject, ProjectInput, TaskRecord, WorkflowOrderError, WorkflowStep
-from novel_agent.infrastructure import FilePromptStore, MemoryTaskStore
+from novel_agent.context_builder import build_generation_context
+from novel_agent.domain import AgentContext, Artifact, ArtifactSummary, NovelProject, ProjectInput, TaskRecord, TaskStatus, WorkflowOrderError, WorkflowStep
+from novel_agent.infrastructure import FileProjectRepository, FilePromptStore, FileTaskStore, MemoryTaskStore
 from novel_agent.orchestrator import NovelOrchestrator
-from novel_agent.services import AuditService, ProjectService, TaskService, _artifact_key, _project_step_from_artifacts, build_artifact
+from novel_agent.quality import build_quality_report
+from novel_agent.services import AuditService, ProjectService, PromptService, TaskService, _artifact_key, _project_step_from_artifacts, build_artifact, build_project_manuscript, build_project_progress
 
 
 class MemoryProjectRepository:
@@ -364,7 +367,244 @@ class ScopeAndStructureTests(unittest.TestCase):
 
         self.assertEqual(updated.current_step, WorkflowStep.CREATED)
         self.assertEqual(updated.artifacts, {})
+        self.assertEqual(updated.artifact_history, {})
+        self.assertEqual(updated.knowledge_base, [])
         self.assertEqual(task_service.list(self.project.project_id), [])
+
+    def test_replacing_artifact_archives_previous_version(self) -> None:
+        first = build_artifact(
+            "requirements",
+            "需求",
+            "旧需求",
+            summary=ArtifactSummary(key_facts=["旧事实"]),
+            step="requirements",
+            scope_kind="project",
+        )
+        second = build_artifact(
+            "requirements",
+            "需求",
+            "新需求",
+            summary=ArtifactSummary(key_facts=["新事实"]),
+            step="requirements",
+            scope_kind="project",
+        )
+
+        self.project_service.register_generated_artifact(self.project.project_id, first)
+        project, _ = self.project_service.register_generated_artifact(self.project.project_id, second)
+
+        self.assertEqual(project.artifacts["requirements"].content, "新需求")
+        self.assertEqual(len(project.artifact_history["requirements"]), 1)
+        self.assertEqual(project.artifact_history["requirements"][0].content, "旧需求")
+        self.assertTrue(project.artifacts["requirements"].metadata.get("version_id"))
+        self.assertTrue(project.artifacts["requirements"].metadata.get("previous_version_id"))
+
+    def test_generated_artifact_updates_knowledge_base(self) -> None:
+        artifact = build_artifact(
+            "requirements",
+            "需求",
+            "需求正文",
+            summary=ArtifactSummary(
+                key_facts=["事实 A"],
+                constraints=["约束 B"],
+                open_questions=["问题 C"],
+            ),
+            step="requirements",
+            scope_kind="project",
+        )
+
+        project, _ = self.project_service.register_generated_artifact(self.project.project_id, artifact)
+        kinds = {(item.kind, item.text) for item in project.knowledge_base}
+
+        self.assertIn(("fact", "事实 A"), kinds)
+        self.assertIn(("constraint", "约束 B"), kinds)
+        self.assertIn(("open_question", "问题 C"), kinds)
+
+    def test_project_progress_counts_chapter_completion(self) -> None:
+        self.project_service.register_generated_artifact(
+            self.project.project_id,
+            build_artifact(
+                _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+                "章节正文",
+                "正文",
+                summary=ArtifactSummary(),
+                step="chapter",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=1,
+            ),
+        )
+
+        progress = build_project_progress(self.project_service.get(self.project.project_id))
+
+        self.assertEqual(progress["planned_chapters"], 8)
+        self.assertEqual(progress["completed_chapters"], 1)
+        self.assertEqual(progress["volumes"][0]["chapters"][0]["chapter"], True)
+
+    def test_project_manuscript_export_prefers_revision_over_draft(self) -> None:
+        artifacts = [
+            build_artifact(
+                _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+                "章节正文",
+                "草稿正文",
+                summary=ArtifactSummary(),
+                step="chapter",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=1,
+            ),
+            build_artifact(
+                _artifact_key("revision", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+                "修订",
+                "修订正文",
+                summary=ArtifactSummary(),
+                step="revision",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=1,
+            ),
+        ]
+        for artifact in artifacts:
+            self.project_service.register_generated_artifact(self.project.project_id, artifact)
+
+        manuscript = build_project_manuscript(self.project_service.get(self.project.project_id))
+
+        self.assertIn("# 测试项目", manuscript)
+        self.assertIn("## 第1卷", manuscript)
+        self.assertIn("### 第1章", manuscript)
+        self.assertIn("修订正文", manuscript)
+        self.assertNotIn("草稿正文", manuscript)
+
+    def test_quality_report_flags_missing_review_steps(self) -> None:
+        self.project_service.register_generated_artifact(
+            self.project.project_id,
+            build_artifact(
+                _artifact_key("chapter_plan", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+                "章节计划",
+                "计划",
+                summary=ArtifactSummary(structured={"min_words": 10}),
+                step="chapter_plan",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=1,
+            ),
+        )
+        self.project_service.register_generated_artifact(
+            self.project.project_id,
+            build_artifact(
+                _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+                "章节正文",
+                "短",
+                summary=ArtifactSummary(),
+                step="chapter",
+                scope_kind="chapter",
+                volume_index=1,
+                chapter_index=1,
+            ),
+        )
+
+        report = build_quality_report(self.project_service.get(self.project.project_id))
+
+        self.assertFalse(report["ready_for_export"])
+        self.assertIn("chapter_too_short", report["chapters"][0]["issues"])
+        self.assertIn("missing_consistency", report["chapters"][0]["issues"])
+        self.assertIn("missing_memory", report["chapters"][0]["issues"])
+
+    def test_later_chapter_context_includes_previous_chapter_artifacts_and_knowledge(self) -> None:
+        first_chapter = build_artifact(
+            _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 1}),
+            "第一章",
+            "第一章正文",
+            summary=ArtifactSummary(key_facts=["主角拿到铜钥匙"]),
+            step="chapter",
+            scope_kind="chapter",
+            volume_index=1,
+            chapter_index=1,
+        )
+        second_chapter = build_artifact(
+            _artifact_key("chapter", {"scope_kind": "chapter", "volume_index": 1, "chapter_index": 2}),
+            "第二章",
+            "第二章正文",
+            summary=ArtifactSummary(key_facts=["主角打开密室"]),
+            step="chapter",
+            scope_kind="chapter",
+            volume_index=1,
+            chapter_index=2,
+        )
+        for artifact in (first_chapter, second_chapter):
+            self.project_service.register_generated_artifact(self.project.project_id, artifact)
+
+        project = self.project_service.get(self.project.project_id)
+        context = build_generation_context(project, "chapter", {"volume_index": 1, "chapter_index": 3})
+
+        recent_titles = [item["title"] for item in context["recent_chapter_artifacts"]]
+        knowledge_texts = [item["text"] for item in context["knowledge_base"]]
+        self.assertIn("第一章", recent_titles)
+        self.assertIn("第二章", recent_titles)
+        self.assertIn("主角拿到铜钥匙", knowledge_texts)
+        self.assertIn("主角打开密室", knowledge_texts)
+
+    def test_file_task_store_persists_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first_store = FileTaskStore(Path(temp_dir))
+            task = first_store.create(TaskRecord(project_id=self.project.project_id, task_name="requirements", input_payload={"foo": "bar"}))
+            task.status = TaskStatus.COMPLETED
+            task.result = {"ok": True}
+            first_store.update(task)
+
+            second_store = FileTaskStore(Path(temp_dir))
+            restored = second_store.get(task.task_id)
+
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.task_id, task.task_id)
+            self.assertEqual(restored.result, {"ok": True})
+            self.assertEqual(restored.input_payload, {"foo": "bar"})
+
+    def test_file_task_store_marks_unfinished_tasks_interrupted_on_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first_store = FileTaskStore(Path(temp_dir))
+            task = first_store.create(TaskRecord(project_id=self.project.project_id, task_name="requirements"))
+            task.status = TaskStatus.RUNNING
+            first_store.update(task)
+
+            second_store = FileTaskStore(Path(temp_dir))
+            restored = second_store.get(task.task_id)
+
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.status.value, "failed")
+            self.assertIn("interrupted", restored.error or "")
+
+    def test_file_prompt_store_validates_required_templates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prompt_dir = Path(temp_dir)
+            (prompt_dir / "requirements.md").write_text("ok", encoding="utf-8")
+            prompt_store = FilePromptStore(prompt_dir)
+
+            prompt_store.validate_required(["requirements"])
+            with self.assertRaises(FileNotFoundError):
+                prompt_store.validate_required(["requirements", "chapter"])
+
+    def test_prompt_render_replaces_named_variables_without_breaking_json_examples(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prompt_dir = Path(temp_dir)
+            (prompt_dir / "template.md").write_text(
+                '示例 JSON：{"title": "占位"}\n项目：{project_summary}',
+                encoding="utf-8",
+            )
+            rendered = PromptService(FilePromptStore(prompt_dir)).render("template", {"project_summary": "项目 A"})
+
+            self.assertIn('{"title": "占位"}', rendered)
+            self.assertIn("项目：项目 A", rendered)
+
+    def test_file_project_repository_uses_json_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository = FileProjectRepository(Path(temp_dir))
+            project = NovelProject(input=ProjectInput(title="文件项目", genre="奇幻"))
+            repository.save(project)
+
+            restored = repository.get(project.project_id)
+
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.input.title, "文件项目")
 
     def test_rough_chapter_plan_generation_infers_missing_chapter_indices(self) -> None:
         agent = BaseAgent("rough_chapter_plan", WorkflowStep.ROUGH_CHAPTER_PLAN, "rough_chapter_plan", "rough_chapter_plan", "粗章纲")

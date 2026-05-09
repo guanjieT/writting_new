@@ -33,6 +33,31 @@ def _project_input_payload(project: NovelProject) -> dict[str, Any]:
     return project.input.model_dump(mode="json")
 
 
+def _knowledge_context(project: NovelProject, payload: Mapping[str, Any], *, limit: int = 80) -> list[dict[str, Any]]:
+    try:
+        volume_index = int(payload.get("volume_index") or 0)
+    except (TypeError, ValueError):
+        volume_index = 0
+    try:
+        chapter_index = int(payload.get("chapter_index") or 0)
+    except (TypeError, ValueError):
+        chapter_index = 0
+    selected: list[dict[str, Any]] = []
+    for item in reversed(project.knowledge_base):
+        if item.scope_kind == "volume" and volume_index > 0:
+            if int(item.volume_index or 0) != volume_index:
+                continue
+        if item.scope_kind == "chapter":
+            if volume_index > 0 and int(item.volume_index or 0) != volume_index:
+                continue
+            if chapter_index > 0 and int(item.chapter_index or 0) > chapter_index:
+                continue
+        selected.append(item.model_dump(mode="json"))
+        if len(selected) >= limit:
+            break
+    return list(reversed(selected))
+
+
 def _step_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     raw_payload = payload.get("payload")
     if isinstance(raw_payload, Mapping):
@@ -362,6 +387,42 @@ def _selected_artifacts(project: NovelProject, step_keys: list[str], payload: Ma
     return result
 
 
+def _recent_chapter_artifacts(project: NovelProject, payload: Mapping[str, Any], *, limit: int = 3, excerpt_chars: int = 360) -> list[dict[str, Any]]:
+    try:
+        volume_index = int(payload.get("volume_index") or 0)
+        chapter_index = int(payload.get("chapter_index") or 0)
+    except (TypeError, ValueError):
+        return []
+    if volume_index <= 0 or chapter_index <= 1:
+        return []
+
+    candidates: list[tuple[int, int, str, Any]] = []
+    for artifact in project.artifacts.values():
+        metadata = artifact.metadata or {}
+        if metadata.get("stale") or metadata.get("state") == "stale":
+            continue
+        step = str(metadata.get("step") or "")
+        if step not in {"chapter", "revision", "consistency", "memory"}:
+            continue
+        try:
+            artifact_volume = int(metadata.get("volume_index") or 0)
+            artifact_chapter = int(metadata.get("chapter_index") or 0)
+        except (TypeError, ValueError):
+            continue
+        if artifact_volume != volume_index or artifact_chapter >= chapter_index:
+            continue
+        candidates.append((artifact_chapter, 1 if step == "revision" else 0, step, artifact))
+
+    recent_chapter_indexes = sorted({item[0] for item in candidates}, reverse=True)[:limit]
+    allowed = set(recent_chapter_indexes)
+    result: list[dict[str, Any]] = []
+    for _, _, step, artifact in sorted((item for item in candidates if item[0] in allowed), key=lambda item: (item[0], item[1], item[2])):
+        context = compact_artifact_context(artifact, excerpt_chars=excerpt_chars, include_excerpt=True)
+        context["source_step"] = step
+        result.append(context)
+    return result
+
+
 @dataclass(frozen=True)
 class GenerationContextProfile:
     name: str
@@ -393,8 +454,10 @@ def build_generation_context(project: NovelProject, step: str, payload: Mapping[
         "context_type": profile.context_type,
         "project_brief": _project_brief(project),
         "project_input": _project_input_payload(project),
+        "knowledge_base": _knowledge_context(project, payload),
         "step_payload": _step_payload(payload),
         "selected_artifacts": _selected_artifacts(project, list(profile.artifact_keys), payload, excerpt_chars=profile.artifact_excerpt_chars),
+        "recent_chapter_artifacts": _recent_chapter_artifacts(project, payload),
     }
 
 
@@ -420,6 +483,7 @@ def build_completion_context(project: NovelProject, payload: Mapping[str, Any], 
         "direct_dependency_artifacts": selected_artifacts,
         "project_brief": _project_brief(project),
         "project_input": _project_input_payload(project),
+        "knowledge_base": _knowledge_context(project, payload, limit=30),
     }
 
 

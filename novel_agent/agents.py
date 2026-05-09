@@ -5,9 +5,10 @@ from json import JSONDecodeError
 from dataclasses import dataclass
 from typing import Any
 
+from .agent_helpers import artifact_prompt_context, build_outline_targets_json, chapter_plan_focus_from_context, normalize_text_list
 from .domain import AgentContext, AgentOutput, ArtifactSummary, GeneratedArtifactPayload, NovelProject, WorkflowStep
 from .context_builder import build_generation_context
-from .services import LLMService, PromptService, build_artifact, compact_artifact_context
+from .services import LLMService, PromptService, build_artifact
 from .services import _artifact_key, _artifact_scope_payload, _scope_matches
 from .workflow_spec import workflow_dependent_map
 
@@ -36,41 +37,6 @@ STRUCTURED_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
         "writing_notes",
     ),
 }
-
-
-def _normalize_text_list(value: Any) -> list[str]:
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        return [line.strip() for line in value.splitlines() if line.strip()]
-    return []
-
-
-def _build_outline_targets_json(project: NovelProject, context: AgentContext) -> str:
-    generation_context = build_generation_context(project, WorkflowStep.OUTLINE.value, context.payload)
-    project_input = generation_context["project_input"]
-    step_payload = generation_context["step_payload"]
-    target_volume_count = int(step_payload.get("volume_count") or project_input.get("target_volume_count") or 1)
-    target_chapters_per_volume = int(step_payload.get("chapters_per_volume") or project_input.get("target_chapters_per_volume") or 12)
-    return json.dumps(
-        {
-            "target_volume_count": target_volume_count,
-            "target_chapters_per_volume": target_chapters_per_volume,
-            "target_words": int(project_input.get("target_words") or 0),
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
-
-
-def _artifact_prompt_context(artifact: Any, *, excerpt_chars: int = 0) -> dict[str, Any]:
-    context = compact_artifact_context(artifact, excerpt_chars=excerpt_chars, include_excerpt=excerpt_chars > 0)
-    summary = context.get("summary")
-    if isinstance(summary, dict):
-        structured = summary.get("structured")
-        if isinstance(structured, dict):
-            context["structured"] = structured
-    return context
 
 
 def _require_keys(step: str, structured: dict[str, Any], keys: tuple[str, ...]) -> None:
@@ -247,6 +213,8 @@ class BaseAgent:
             "project_summary": project.summary(),
             "input_json": json.dumps(generation_context["project_input"], ensure_ascii=False, indent=2),
             "project_brief_json": json.dumps(generation_context["project_brief"], ensure_ascii=False, indent=2),
+            "knowledge_base_json": json.dumps(generation_context["knowledge_base"], ensure_ascii=False, indent=2),
+            "recent_context_json": json.dumps(generation_context["recent_chapter_artifacts"], ensure_ascii=False, indent=2),
             "artifacts_json": json.dumps(generation_context["selected_artifacts"], ensure_ascii=False, indent=2),
             "step_payload_json": step_payload_json,
             "context_json": json.dumps({
@@ -254,7 +222,10 @@ class BaseAgent:
                 "context_type": generation_context["context_type"],
                 "project_brief": generation_context["project_brief"],
                 "step_payload": generation_context["step_payload"],
+                "knowledge_base": generation_context["knowledge_base"],
+                "recent_chapter_artifacts": generation_context["recent_chapter_artifacts"],
             }, ensure_ascii=False, indent=2),
+            "chapter_plan_focus_json": "{}",
         }
 
     def _strip_code_fence(self, raw_text: str) -> str:
@@ -356,7 +327,7 @@ class PlanningAgent(BaseAgent):
                     None,
                 )
             if parent_artifact is not None:
-                variables["parent_artifact_json"] = json.dumps(_artifact_prompt_context(parent_artifact, excerpt_chars=0), ensure_ascii=False, indent=2)
+                variables["parent_artifact_json"] = json.dumps(artifact_prompt_context(parent_artifact, excerpt_chars=0), ensure_ascii=False, indent=2)
         return variables
 
 
@@ -380,10 +351,10 @@ class CharacterAgent(BaseAgent):
         variables["character_frame_json"] = json.dumps(
             {
                 "role_capacity": int(payload.get("role_capacity", 4) or 4),
-                "core_roles": _normalize_text_list(payload.get("core_roles")),
-                "role_slots": _normalize_text_list(payload.get("role_slots")),
-                "role_rules": _normalize_text_list(payload.get("role_rules")),
-                "notes": _normalize_text_list(payload.get("notes")),
+                "core_roles": normalize_text_list(payload.get("core_roles")),
+                "role_slots": normalize_text_list(payload.get("role_slots")),
+                "role_rules": normalize_text_list(payload.get("role_rules")),
+                "notes": normalize_text_list(payload.get("notes")),
             },
             ensure_ascii=False,
             indent=2,
@@ -397,7 +368,7 @@ class OutlineAgent(BaseAgent):
 
     def build_variables(self, project: NovelProject, context: AgentContext) -> dict[str, Any]:
         variables = super().build_variables(project, context)
-        variables["outline_targets_json"] = _build_outline_targets_json(project, context)
+        variables["outline_targets_json"] = build_outline_targets_json(project, context)
         return variables
 
 
@@ -407,7 +378,7 @@ class RoughVolumeOutlineAgent(PlanningAgent):
 
     def build_variables(self, project: NovelProject, context: AgentContext) -> dict[str, Any]:
         variables = super().build_variables(project, context)
-        variables["outline_targets_json"] = _build_outline_targets_json(project, context)
+        variables["outline_targets_json"] = build_outline_targets_json(project, context)
         return variables
 
 
@@ -429,6 +400,126 @@ class ChapterPlanAgent(PlanningAgent):
 class ChapterAgent(PlanningAgent):
     def __init__(self) -> None:
         super().__init__("chapter", WorkflowStep.CHAPTER, "chapter", "chapter", "章节草稿", WorkflowStep.CHAPTER_PLAN)
+
+    def _recommended_max_tokens(self, context: AgentContext) -> int:
+        try:
+            target_words = int(context.payload.get("target_words") or 2000)
+        except (TypeError, ValueError):
+            target_words = 2000
+        return min(max(target_words * 2, 3200), 6000)
+
+    def _content_char_length(self, content: str) -> int:
+        return len(content.strip())
+
+    def _check_content_length(self, content: str, context: AgentContext) -> tuple[bool, int, int]:
+        target_words = int(context.payload.get("target_words") or 2000)
+        threshold = max(int(target_words * 0.85), target_words - 300)
+        actual = self._content_char_length(content)
+        ok = actual >= threshold
+        return ok, actual, threshold
+
+    def _build_expansion_prompt(
+        self,
+        project: NovelProject,
+        context: AgentContext,
+        first_draft: str,
+        system_prompt: str,
+        max_tokens: int,
+    ) -> str:
+        target_words = int(context.payload.get("target_words") or 2000)
+        min_words = max(int(target_words * 0.85), target_words - 300)
+        return (
+            f"你上一次生成的正文长度明显不足（实际约 {{actual_len}} 字，目标 {{target_words}} 字，最低要求 {{min_words}} 字）。"
+            f"现在不要改写章节目标，不要改变关键事件顺序，不要重置叙事，而是在现有章节计划基础上把本章扩写为完整可读的小说正文。\n\n"
+            f"扩写要求：\n"
+            f"- 保留原有 main_event、conflict、hook\n"
+            f"- 保留原有 scene 顺序\n"
+            f"- 通过动作、对白、心理反应、环境互动、局势变化来扩写\n"
+            f"- 不允许用总结、说明、复盘来凑字数\n"
+            f"- 不允许新增会影响后续规划的大设定\n"
+            f"- 目标长度：至少接近 {target_words} 字，宁可略长，不可明显偏短\n\n"
+            f"上一次生成的正文草稿（参考用，不要原文复制）：\n{{first_draft}}\n\n"
+            f"请输出一个 JSON 对象，content 必须是扩写后的完整章节正文（目标 {target_words} 字以上）。JSON："
+        )
+
+    def build_variables(self, project: NovelProject, context: AgentContext) -> dict[str, Any]:
+        variables = super().build_variables(project, context)
+        parent_artifact_json = variables.get("parent_artifact_json", "{}")
+        try:
+            parent_context = json.loads(parent_artifact_json)
+        except JSONDecodeError:
+            parent_context = {}
+        if not isinstance(parent_context, dict):
+            parent_context = {}
+        variables["chapter_plan_focus_json"] = json.dumps(
+            chapter_plan_focus_from_context(parent_context),
+            ensure_ascii=False,
+            indent=2,
+        )
+        target_words = int(context.payload.get("target_words") or 2000)
+        variables["target_words_85"] = max(int(target_words * 0.85), target_words - 300)
+        return variables
+
+    def run(self, project: NovelProject, context: AgentContext, deps: AgentDependencies) -> AgentOutput:
+        if context.max_tokens <= 1600:
+            context = context.model_copy(update={"max_tokens": self._recommended_max_tokens(context)})
+        system_prompt = deps.prompt_service.load(self.template_name)
+        prompt = deps.prompt_service.render(self.template_name, self.build_variables(project, context))
+        raw_output = deps.llm_service.complete(
+            prompt,
+            system_prompt=system_prompt,
+            temperature=context.temperature,
+            max_tokens=context.max_tokens,
+            metadata={"artifact_key": self.artifact_key, "artifact_title": self.artifact_title},
+        )
+        payload = self._parse_generated_payload(raw_output)
+        content = payload.content.strip()
+        if not content:
+            raise ValueError("LLM returned empty content")
+
+        ok, actual, threshold = self._check_content_length(content, context)
+        if not ok:
+            expansion_prompt_template = self._build_expansion_prompt(
+                project, context, content, system_prompt, context.max_tokens
+            )
+            expansion_prompt = expansion_prompt_template.format(
+                actual_len=actual,
+                target_words=int(context.payload.get("target_words") or 2000),
+                min_words=threshold,
+                first_draft=content[:1000],
+            )
+            raw_retry = deps.llm_service.complete(
+                expansion_prompt,
+                system_prompt=system_prompt,
+                temperature=context.temperature,
+                max_tokens=context.max_tokens,
+                metadata={"artifact_key": self.artifact_key, "artifact_title": self.artifact_title},
+            )
+            payload = self._parse_generated_payload(raw_retry)
+            content = payload.content.strip()
+            if not content:
+                raise ValueError("LLM returned empty content after retry")
+            ok_retry, actual_retry, threshold_retry = self._check_content_length(content, context)
+            if not ok_retry:
+                raise ValueError(
+                    f"正文长度不足（补救后仍不达标）：目标字数 {int(context.payload.get('target_words') or 2000)}，"
+                    f"最低阈值 {threshold_retry}，实际 {actual_retry}，当前 max_tokens {context.max_tokens}。"
+                    f"建议：提高 max_tokens 后重试。"
+                )
+
+        summary = self._build_summary(payload)
+        step_payload = context.payload
+        artifact_metadata = self._artifact_scope_metadata(step_payload)
+        artifact = build_artifact(
+            _artifact_key(self.step.value, artifact_metadata),
+            self.artifact_title,
+            content,
+            summary=summary,
+            agent=self.name,
+            **artifact_metadata,
+            generated_payload=payload.model_dump(mode="json"),
+        )
+        return AgentOutput(step=self.step, artifact=artifact, notes=[f"generated by {self.name}"])
 
 
 class RevisionAgent(BaseAgent):

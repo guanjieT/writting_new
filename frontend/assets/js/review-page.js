@@ -18,6 +18,7 @@ let workflowSteps = FALLBACK_WORKFLOW_STEPS;
 let dependencyMap = Object.fromEntries(FALLBACK_WORKFLOW_STEPS.map((step) => [step.key, step.depends_on || []]));
 let currentSnapshot = null;
 let currentTasks = [];
+let currentQualityReport = null;
 let currentSelection = readScopeSelectionFromUrl();
 
 function buildStepUrl(step, projectId) {
@@ -185,6 +186,8 @@ function renderSummary(snapshot, tasks) {
     const selection = selectionForCurrentStep(step);
     return !getArtifactForStep(snapshot, step, selection) && isUnlocked(step, snapshot, dependencyMap, selection);
   }).length;
+  const progress = snapshot.progress || {};
+  const quality = currentQualityReport || {};
 
   summary.innerHTML = `
     <div class="stats-grid">
@@ -193,6 +196,8 @@ function renderSummary(snapshot, tasks) {
       <article class="stat-card"><div class="stat-number">${escapeHtml(visibleArtifactCount)}</div><div class="muted">当前上下文已产出</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(missingContextCount)}</div><div class="muted">当前上下文缺失对象数</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(pendingContextSteps)}</div><div class="muted">当前 selection 待处理步骤</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(progress.completed_chapters ?? 0)}/${escapeHtml(progress.planned_chapters ?? 0)}</div><div class="muted">正文完成</div></article>
+      <article class="stat-card"><div class="stat-number">${escapeHtml(quality.blocking_issue_count ?? 0)}</div><div class="muted">质量阻塞</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(failedTasks)}</div><div class="muted">当前上下文失败任务</div></article>
       <article class="stat-card"><div class="stat-number">${escapeHtml(pendingTasks)}</div><div class="muted">当前上下文执行中任务</div></article>
     </div>
@@ -210,6 +215,7 @@ function renderSummary(snapshot, tasks) {
         ${badge(`${project.input.target_words} 字`, 'soft')}
         ${badge(`${project.input.target_volume_count} 卷`, 'soft')}
         ${badge(`${project.input.target_chapters_per_volume} 章/卷`, 'soft')}
+        ${badge(quality.ready_for_export ? '可导出' : '待审查', quality.ready_for_export ? 'success' : 'warn')}
       </div>
       <details>
         <summary>查看项目快照</summary>
@@ -353,16 +359,18 @@ async function loadPage() {
 
   setSelectedProjectId(projectId);
   syncTopNavLinks(projectId);
-  const [context, snapshot, tasks] = await Promise.all([
+  const [context, snapshot, tasks, qualityReport] = await Promise.all([
     loadWorkflowContext(),
     api.getProjectSnapshot(projectId),
     api.listTasks(projectId),
+    api.getQualityReport(projectId),
   ]);
 
   workflowSteps = context.steps || FALLBACK_WORKFLOW_STEPS;
   dependencyMap = context.dependencies || dependencyMap;
   currentSnapshot = snapshot;
   currentTasks = tasks;
+  currentQualityReport = qualityReport;
   currentSelection = clampScopeSelection(snapshot, readScopeSelectionFromUrl(), {
     getVolumeCount: getSelectableVolumeCount,
     getChapterCountForVolume: getSelectableChapterCount,
