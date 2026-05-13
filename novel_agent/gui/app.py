@@ -18,15 +18,15 @@ from .scope_utils import (
 from .views.project_view import ProjectHubView
 from .views.workflow_view import WorkflowView
 from .views.review_view import ReviewView
-from .theme import apply_theme
+from .theme import COLORS, apply_theme
 
 
 class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        root.title("Novel Agent — 小说创作助手")
-        root.geometry("1400x900")
-        root.minsize(1000, 600)
+        root.title("Novel Agent — 小说创作工作台")
+        root.geometry("1440x920")
+        root.minsize(1120, 680)
 
         apply_theme(root)
 
@@ -65,68 +65,94 @@ class App:
 
     def _build_layout(self) -> None:
         # Main container
-        self.main_frame = ttk.Frame(self.root)
+        self.main_frame = ttk.Frame(self.root, style="AppShell.TFrame")
         self.main_frame.pack(fill="both", expand=True)
 
         # Sidebar
-        sidebar = ttk.Frame(self.main_frame, width=260, style="Sidebar.TFrame")
+        sidebar = ttk.Frame(self.main_frame, width=276, style="Sidebar.TFrame")
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
         brand = ttk.Frame(sidebar, style="Sidebar.TFrame")
-        brand.pack(fill="x", padx=16, pady=(18, 14))
-        ttk.Label(brand, text="Novel Agent", style="SidebarTitle.TLabel").pack(anchor="w")
-        ttk.Label(brand, text="结构化小说创作工作台", style="SidebarMuted.TLabel").pack(anchor="w", pady=(4, 0))
+        brand.pack(fill="x", padx=20, pady=(24, 18))
+        ttk.Label(brand, text="✦ Novel Agent", style="SidebarTitle.TLabel").pack(anchor="w")
+        ttk.Label(brand, text="AI-assisted fiction studio", style="SidebarMuted.TLabel").pack(anchor="w", pady=(6, 0))
 
         # Project info
-        proj_frame = ttk.LabelFrame(sidebar, text="当前项目", padding=10, style="Sidebar.TLabelframe")
-        proj_frame.pack(fill="x", padx=14, pady=(0, 12))
+        proj_frame = ttk.Frame(sidebar, style="SidebarCard.TFrame")
+        proj_frame.pack(fill="x", padx=16, pady=(0, 16))
+        proj_inner = ttk.Frame(proj_frame, style="SidebarCard.TFrame")
+        proj_inner.pack(fill="x", padx=14, pady=14)
 
-        self.project_name_label = ttk.Label(proj_frame, text="（未选择）", wraplength=210, style="SidebarValue.TLabel", font=("TkDefaultFont", 11, "bold"))
-        self.project_name_label.pack(anchor="w")
-        self.project_genre_label = ttk.Label(proj_frame, text="", style="SidebarMuted.TLabel")
+        ttk.Label(proj_inner, text="当前项目", style="SidebarCardMuted.TLabel").pack(anchor="w")
+        self.project_name_label = ttk.Label(
+            proj_inner,
+            text="（未选择）",
+            wraplength=220,
+            style="SidebarValue.TLabel",
+            font=("TkDefaultFont", 12, "bold"),
+        )
+        self.project_name_label.pack(anchor="w", pady=(5, 4))
+        self.project_genre_label = ttk.Label(proj_inner, text="", style="SidebarCardMuted.TLabel")
         self.project_genre_label.pack(anchor="w")
-        self.project_status_label = ttk.Label(proj_frame, text="", style="SidebarMuted.TLabel")
-        self.project_status_label.pack(anchor="w")
+        self.project_status_label = ttk.Label(proj_inner, text="", style="SidebarCardMuted.TLabel")
+        self.project_status_label.pack(anchor="w", pady=(2, 0))
 
         # Navigation buttons
-        nav_frame = ttk.LabelFrame(sidebar, text="导航", padding=8, style="Sidebar.TLabelframe")
-        nav_frame.pack(fill="x", padx=14, pady=(0, 12))
+        nav_frame = ttk.Frame(sidebar, style="Sidebar.TFrame")
+        nav_frame.pack(fill="x", padx=16, pady=(0, 18))
+        ttk.Label(nav_frame, text="导航", style="SidebarSection.TLabel").pack(anchor="w", pady=(0, 8))
 
-        self.nav_project_btn = ttk.Button(nav_frame, text="项目中心", style="Nav.TButton", command=lambda: self.switch_view("project"))
-        self.nav_project_btn.pack(fill="x", pady=3)
+        self.nav_project_btn = ttk.Button(nav_frame, text="  项目中心", style="Nav.TButton", command=lambda: self.switch_view("project"))
+        self.nav_project_btn.pack(fill="x", pady=4)
 
-        self.nav_workflow_btn = ttk.Button(nav_frame, text="工作台", style="Nav.TButton", command=lambda: self.switch_view("workflow"))
-        self.nav_workflow_btn.pack(fill="x", pady=3)
+        self.nav_workflow_btn = ttk.Button(nav_frame, text="  创作工作台", style="Nav.TButton", command=lambda: self.switch_view("workflow"))
+        self.nav_workflow_btn.pack(fill="x", pady=4)
 
-        self.nav_review_btn = ttk.Button(nav_frame, text="审查面板", style="Nav.TButton", command=lambda: self.switch_view("review"))
-        self.nav_review_btn.pack(fill="x", pady=3)
+        self.nav_review_btn = ttk.Button(nav_frame, text="  审查面板", style="Nav.TButton", command=lambda: self.switch_view("review"))
+        self.nav_review_btn.pack(fill="x", pady=4)
 
         # Scope selection
-        scope_frame = ttk.LabelFrame(sidebar, text="范围选择", padding=10, style="Sidebar.TLabelframe")
-        scope_frame.pack(fill="x", padx=14, pady=(0, 12))
+        scope_frame = ttk.Frame(sidebar, style="SidebarCard.TFrame")
+        scope_frame.pack(fill="x", padx=16, pady=(0, 16))
+        scope_inner = ttk.Frame(scope_frame, style="SidebarCard.TFrame")
+        scope_inner.pack(fill="x", padx=14, pady=14)
+        ttk.Label(scope_inner, text="范围选择", style="SidebarCard.TLabel", font=("TkDefaultFont", 10, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-        ttk.Label(scope_frame, text="卷", style="SidebarMuted.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 8))
-        self.volume_combo = ttk.Combobox(scope_frame, state="readonly", width=12)
-        self.volume_combo.grid(row=0, column=1, sticky="ew", pady=2)
+        ttk.Label(scope_inner, text="卷", style="SidebarCardMuted.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.volume_combo = ttk.Combobox(scope_inner, state="readonly", width=12)
+        self.volume_combo.grid(row=1, column=1, sticky="ew", pady=4)
         self.volume_combo.bind("<<ComboboxSelected>>", self._on_scope_change)
 
-        ttk.Label(scope_frame, text="章", style="SidebarMuted.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 8))
-        self.chapter_combo = ttk.Combobox(scope_frame, state="readonly", width=12)
-        self.chapter_combo.grid(row=1, column=1, sticky="ew", pady=2)
+        ttk.Label(scope_inner, text="章", style="SidebarCardMuted.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.chapter_combo = ttk.Combobox(scope_inner, state="readonly", width=12)
+        self.chapter_combo.grid(row=2, column=1, sticky="ew", pady=4)
         self.chapter_combo.bind("<<ComboboxSelected>>", self._on_scope_change)
 
-        scope_frame.grid_columnconfigure(1, weight=1)
+        scope_inner.grid_columnconfigure(1, weight=1)
 
         # Task status indicator
         task_box = ttk.Frame(sidebar, style="Sidebar.TFrame")
-        task_box.pack(side="bottom", fill="x", padx=16, pady=18)
+        task_box.pack(side="bottom", fill="x", padx=18, pady=20)
+        ttk.Label(task_box, text="任务状态", style="SidebarSection.TLabel").pack(anchor="w", pady=(0, 6))
         self.task_indicator = ttk.Label(task_box, text="", style="SidebarMuted.TLabel")
         self.task_indicator.pack(anchor="w")
 
         # Content panel
-        self.content_panel = ttk.Frame(self.main_frame)
-        self.content_panel.pack(side="left", fill="both", expand=True, padx=14, pady=14)
+        content_shell = ttk.Frame(self.main_frame, style="AppShell.TFrame")
+        content_shell.pack(side="left", fill="both", expand=True, padx=18, pady=18)
+        content_shell.grid_columnconfigure(0, weight=1)
+        content_shell.grid_rowconfigure(1, weight=1)
+
+        self.top_bar = ttk.Frame(content_shell, style="AppShell.TFrame")
+        self.top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        self.page_title_label = ttk.Label(self.top_bar, text="项目中心", style="Title.TLabel")
+        self.page_title_label.pack(side="left")
+        self.page_hint_label = ttk.Label(self.top_bar, text="管理作品设定与创作入口", style="Muted.TLabel")
+        self.page_hint_label.pack(side="left", padx=12)
+
+        self.content_panel = ttk.Frame(content_shell, style="AppShell.TFrame")
+        self.content_panel.grid(row=1, column=0, sticky="nsew")
 
         # Build views
         self._views: dict[str, Any] = {
@@ -140,13 +166,18 @@ class App:
         status_bar.pack(side="bottom", fill="x")
 
         self.status_label = ttk.Label(status_bar, text="就绪", style="PanelMuted.TLabel")
-        self.status_label.pack(side="left", padx=12, pady=4)
+        self.status_label.pack(side="left", padx=14, pady=6)
 
         self.running_indicator = ttk.Progressbar(status_bar, mode="indeterminate", length=120)
         # Start hidden
 
     def switch_view(self, view_name: str) -> None:
         """Show one view, hide the others."""
+        # Refresh view (workflow and review require a selected project)
+        if view_name in ("workflow", "review") and not self.shared.current_project_id:
+            messagebox.showwarning("未选择项目", "请先在项目中心选择或创建一个项目。")
+            view_name = "project"
+
         for name, view in self._views.items():
             if name == view_name:
                 view.frame.pack(fill="both", expand=True)
@@ -154,6 +185,16 @@ class App:
                 view.frame.pack_forget()
 
         self._current_view = view_name
+
+        page_meta = {
+            "project": ("项目中心", "管理作品设定与创作入口"),
+            "workflow": ("创作工作台", "按步骤生成、检查和维护小说产物"),
+            "review": ("审查面板", "查看进度、任务和质量阻塞项"),
+        }
+        title, hint = page_meta.get(view_name, ("Novel Agent", ""))
+        self.page_title_label.configure(text=title)
+        self.page_hint_label.configure(text=hint)
+        self.status_label.configure(text=f"当前页面：{title}")
 
         # Update nav button styles
         for name, btn in [
@@ -165,12 +206,6 @@ class App:
                 btn.configure(style="NavSelected.TButton")
             else:
                 btn.configure(style="Nav.TButton")
-
-        # Refresh view (workflow and review require a selected project)
-        if view_name in ("workflow", "review") and not self.shared.current_project_id:
-            messagebox.showwarning("未选择项目", "请先在项目中心选择或创建一个项目。")
-            self.switch_view("project")
-            return
 
         view = self._views[view_name]
         if hasattr(view, "refresh"):
@@ -270,18 +305,18 @@ class App:
             status = project.get("status", "")
             if hasattr(status, "value"):
                 status = status.value
-            self.project_status_label.configure(text=f"状态: {status}")
+            self.project_status_label.configure(text=f"状态：{status}")
         else:
             self.project_name_label.configure(text="（未选择）")
-            self.project_genre_label.configure(text="")
+            self.project_genre_label.configure(text="先在项目中心创建或选择作品")
             self.project_status_label.configure(text="")
 
         # Update task indicator
         active = self.shared.task_monitor.active_count
         if active > 0:
-            self.task_indicator.configure(text=f"运行中: {active} 个任务", foreground="#bfdbfe")
+            self.task_indicator.configure(text=f"● 运行中：{active} 个任务", foreground="#bfdbfe")
         else:
-            self.task_indicator.configure(text="无运行任务", foreground="#b8c2d4")
+            self.task_indicator.configure(text="● 无运行任务", foreground="#b8c2d4")
 
     def _show_about(self) -> None:
-        messagebox.showinfo("关于", "Novel Agent Clean\n小说创作助手\n\n一个结构化的 AI 辅助小说创作系统。")
+        messagebox.showinfo("关于", "Novel Agent Clean\n小说创作工作台\n\n一个结构化的 AI 辅助小说创作系统。")
