@@ -6,6 +6,7 @@ from typing import Any
 
 from .agents import AgentDependencies, BaseAgent, build_agent_registry
 from .domain import AgentOutput, Artifact, NovelProject, UnsupportedStepError, WorkflowOrderError, WorkflowStep
+from .longform_memory import merge_structured_memory
 from .workflow_spec import workflow_dependency_map
 from .services import AuditService, ProjectService, TaskService, agent_context, build_project_progress, _artifact_scope_payload, _scope_matches
 
@@ -90,11 +91,19 @@ class NovelOrchestrator:
         context = agent_context(project_id, payload)
         output = self.agents[step].run(project, context, self.agent_dependencies)
         project, stale_keys = self.project_service.register_generated_artifact(project_id, output.artifact)
+        memory_items_added = merge_structured_memory(project, project.artifacts[output.artifact.key])
+        if memory_items_added:
+            self.project_service.save(project)
         self.audit_service.record(
             action=f"agent.{step}.completed",
             project_id=project_id,
             message=output.artifact.title,
-            payload={"artifact_key": output.artifact.key, "notes": output.notes, "stale_keys": stale_keys},
+            payload={
+                "artifact_key": output.artifact.key,
+                "notes": output.notes,
+                "stale_keys": stale_keys,
+                "structured_memory_items_added": memory_items_added,
+            },
         )
         return output
 
@@ -112,6 +121,9 @@ class NovelOrchestrator:
             project.artifact_history.clear()
         if project.knowledge_base:
             project.knowledge_base.clear()
+        if project.structured_memory:
+            for bucket in project.structured_memory:
+                project.structured_memory[bucket] = []
         project.touch(WorkflowStep.CREATED)
         removed_task_count = self.task_service.delete_project(project_id) if self.task_service is not None else 0
         self.project_service.save(project)
@@ -132,6 +144,7 @@ class NovelOrchestrator:
                 for key, artifacts in project.artifact_history.items()
             },
             "knowledge_base": [item.model_dump(mode="json") for item in project.knowledge_base],
+            "structured_memory": project.structured_memory,
             "progress": build_project_progress(project),
         }
 
