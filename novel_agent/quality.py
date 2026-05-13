@@ -3,38 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .domain import Artifact, NovelProject
-
-
-def _active_artifacts(project: NovelProject) -> list[Artifact]:
-    return [
-        artifact
-        for artifact in project.artifacts.values()
-        if not artifact.metadata.get("stale") and artifact.metadata.get("state") != "stale"
-    ]
-
-
-def _scoped_key(artifact: Artifact) -> tuple[int, int] | None:
-    metadata = artifact.metadata or {}
-    try:
-        volume_index = int(metadata.get("volume_index") or 0)
-        chapter_index = int(metadata.get("chapter_index") or 0)
-    except (TypeError, ValueError):
-        return None
-    if volume_index <= 0 or chapter_index <= 0:
-        return None
-    return volume_index, chapter_index
-
-
-def _index_by_step(project: NovelProject, step: str) -> dict[tuple[int, int], Artifact]:
-    indexed: dict[tuple[int, int], Artifact] = {}
-    for artifact in _active_artifacts(project):
-        if artifact.metadata.get("step") != step:
-            continue
-        scoped_key = _scoped_key(artifact)
-        if scoped_key is None:
-            continue
-        indexed[scoped_key] = artifact
-    return indexed
+from .validators import index_by_step, issue_counts, validate_project
 
 
 def _target_words(plan: Artifact | None, chapter: Artifact | None) -> int:
@@ -53,36 +22,31 @@ def _target_words(plan: Artifact | None, chapter: Artifact | None) -> int:
 
 
 def build_quality_report(project: NovelProject) -> dict[str, Any]:
-    plans = _index_by_step(project, "chapter_plan")
-    chapters = _index_by_step(project, "chapter")
-    revisions = _index_by_step(project, "revision")
-    consistency = _index_by_step(project, "consistency")
-    memories = _index_by_step(project, "memory")
+    plans = index_by_step(project, "chapter_plan")
+    chapters = index_by_step(project, "chapter")
+    revisions = index_by_step(project, "revision")
+    consistency = index_by_step(project, "consistency")
+    memories = index_by_step(project, "memory")
     keys = sorted(set(plans) | set(chapters) | set(revisions) | set(consistency) | set(memories))
     items: list[dict[str, Any]] = []
-    blocking_issue_count = 0
+
+    validator_issues = validate_project(project)
+    issues_by_chapter: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    project_level_issues: list[dict[str, Any]] = []
+    for issue in validator_issues:
+        issue_dict = issue.to_dict()
+        if issue.volume_index and issue.chapter_index:
+            issues_by_chapter.setdefault((issue.volume_index, issue.chapter_index), []).append(issue_dict)
+        else:
+            project_level_issues.append(issue_dict)
 
     for volume_index, chapter_index in keys:
         plan = plans.get((volume_index, chapter_index))
         chapter = chapters.get((volume_index, chapter_index))
         target_words = _target_words(plan, chapter)
         actual_words = len((chapter.content if chapter else "").strip())
-        issues: list[str] = []
-
-        if plan is None:
-            issues.append("missing_chapter_plan")
-        if chapter is None:
-            issues.append("missing_chapter")
-        if chapter is not None and target_words and actual_words < target_words:
-            issues.append("chapter_too_short")
-        if (volume_index, chapter_index) not in consistency:
-            issues.append("missing_consistency")
-        if (volume_index, chapter_index) not in memories:
-            issues.append("missing_memory")
-
-        blocking = any(issue in issues for issue in ("missing_chapter_plan", "missing_chapter", "chapter_too_short", "missing_consistency"))
-        if blocking:
-            blocking_issue_count += 1
+        chapter_issues = issues_by_chapter.get((volume_index, chapter_index), [])
+        blocking = any(issue.get("severity") == "blocking" for issue in chapter_issues)
         items.append(
             {
                 "volume_index": volume_index,
@@ -92,15 +56,21 @@ def build_quality_report(project: NovelProject) -> dict[str, Any]:
                 "has_revision": (volume_index, chapter_index) in revisions,
                 "has_consistency": (volume_index, chapter_index) in consistency,
                 "has_memory": (volume_index, chapter_index) in memories,
-                "issues": issues,
+                "issues": [issue.get("type") for issue in chapter_issues],
+                "detailed_issues": chapter_issues,
                 "blocking": blocking,
             }
         )
 
+    counts = issue_counts(validator_issues)
     return {
         "project_id": project.project_id,
         "checked_chapters": len(items),
-        "blocking_issue_count": blocking_issue_count,
-        "ready_for_export": bool(items) and blocking_issue_count == 0,
+        "blocking_issue_count": counts.get("blocking", 0),
+        "warning_issue_count": counts.get("warning", 0),
+        "info_issue_count": counts.get("info", 0),
+        "ready_for_export": bool(items) and counts.get("blocking", 0) == 0,
+        "project_level_issues": project_level_issues,
         "chapters": items,
+        "validator_issues": [issue.to_dict() for issue in validator_issues],
     }
