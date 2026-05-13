@@ -442,7 +442,6 @@ class ProjectView(ctk.CTkFrame):
                 height=64,
                 corner_radius=17,
                 anchor="w",
-                justify="left",
                 fg_color=C["primary"] if selected else C["soft"],
                 hover_color=C["primary_hover"] if selected else "#e2e8f0",
                 text_color=C["white"] if selected else C["text"],
