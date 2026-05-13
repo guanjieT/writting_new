@@ -142,6 +142,18 @@ class NovelProject(BaseModel):
     artifacts: dict[str, Artifact] = Field(default_factory=dict)
     artifact_history: dict[str, list[Artifact]] = Field(default_factory=dict)
     knowledge_base: list[KnowledgeItem] = Field(default_factory=list)
+    structured_memory: dict[str, list[dict[str, Any]]] = Field(
+        default_factory=lambda: {
+            "characters": [],
+            "locations": [],
+            "items": [],
+            "plot_threads": [],
+            "foreshadowing": [],
+            "timeline_events": [],
+            "relationships": [],
+            "world_rules": [],
+        }
+    )
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
