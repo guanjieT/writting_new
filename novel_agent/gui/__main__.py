@@ -5,15 +5,11 @@ Usage: python -m novel_agent.gui
 
 from __future__ import annotations
 
-import tkinter as tk
-
 
 def main() -> None:
-    from .app import App
+    from .app_modern import main as run_modern_gui
 
-    root = tk.Tk()
-    App(root)
-    root.mainloop()
+    run_modern_gui()
 
 
 if __name__ == "__main__":
