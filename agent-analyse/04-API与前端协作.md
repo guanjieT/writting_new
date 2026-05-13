@@ -1,162 +1,106 @@
-# API 与前端协作
+# GUI 架构与后端协作
 
-## API 结构
+## 概述
 
-FastAPI 应用在 `api/app.py` 中组装。主要路由包括：
+前端已从 Web（FastAPI + HTML/JS）迁移为 Python tkinter 桌面 GUI。`novel_agent/api/` 和 `frontend/` 目录已删除。GUI 直接通过 `AppContainer` 调用后端服务，无 HTTP 层。
 
-| 路由文件 | 职责 |
+## GUI 结构
+
+GUI 包位于 `novel_agent/gui/`，采用单窗口多视图架构。
+
+| 文件 | 职责 |
 | --- | --- |
-| `routes/frontend.py` | 返回多页面 HTML |
-| `routes/health.py` | 健康检查 |
-| `routes/workflow.py` | 返回工作流规范 |
-| `routes/projects.py` | 项目 CRUD、快照、删除 artifact |
-| `routes/workflow_steps.py` | 基础工作流步骤和任务查询 |
-| `routes/planning.py` | 卷纲、粗章纲、章节计划等结构步骤 |
-| `routes/ai.py` | 字段级 AI 补全 |
+| `__main__.py` | 入口：`python -m novel_agent.gui` |
+| `app.py` | Tk 根窗口、DI 容器初始化、侧栏导航、视图切换、范围选择 |
+| `state.py` | `AppShared` 共享状态数据类 |
+| `theme.py` | 统一管理 GUI 色彩、字体、ttk 样式和原生控件样式工具 |
+| `step_fields.py` | 12 个工作流步骤的字段定义（Python 版 step-meta.js） |
+| `scope_utils.py` | 范围解析、产物查找、结构化数据解析、依赖检查、默认值回填 |
+| `task_monitor.py` | tkinter.after() 异步任务轮询 |
+| `widgets/form_builder.py` | 动态表单构建：FieldDef → tkinter 控件 |
+| `widgets/artifact_viewer.py` | 产物只读展示（内容、摘要、结构化数据、元数据） |
+| `views/project_view.py` | 项目中心：创建、列出、编辑、删除项目 |
+| `views/workflow_view.py` | 主工作台：步骤导航、动态表单、产物查看、依赖检查 |
+| `views/review_view.py` | 审查面板：总览统计、进度矩阵、任务历史、质量报告 |
 
-请求体模型集中在 `api/schemas.py`。前端每个步骤字段都应该能在这里找到对应请求模型，否则就会出现“前端填了但后端吃不到”的问题。
+## 数据流
 
-## 生成接口模式
+GUI 调用后端服务是直接 Python 函数调用：
 
-多数生成接口都遵循同一个模式：
-
-```text
-POST /projects/{project_id}/{step-endpoint}
-  -> 创建 TaskRecord
-  -> 后台执行 orchestrator.dispatch(...)
-  -> 立即返回 task
+```
+用户点击"生成"
+  → form_builder.read_payload() → dict
+  → task_service.submit(job=lambda: orchestrator.dispatch(...))
+  → task_monitor.start_polling(task_id)  # tkinter.after() 轮询
+  → on_complete: 刷新快照，重新渲染视图
 ```
 
-前端拿到 `task_id` 后调用：
+所有调用路径：`container.orchestrator.dispatch(...)`、`container.project_service.create(...)`、`container.task_service.list(...)` 等。
 
-```text
-GET /tasks/{task_id}
-```
+## 异步处理
 
-直到任务状态变为 `completed` 或 `failed`。
+- **任务轮询**：`TaskMonitor` 使用 `root.after(1200, ...)` 检查任务状态。非阻塞，GUI 保持响应。
+- **字段 AI 补全**：在 `threading.Thread(daemon=True)` 中运行，结果通过 `root.after(0, callback)` 回传主线程。
 
-这个异步设计的好处是接口不会因为 LLM 慢而卡死浏览器，也方便前端展示执行中、失败和任务历史。
+## 范围选择
 
-## 项目接口
+侧栏中的卷/章 Combobox。值从结构化产物数据填充（从 `rough_volume_outline` 和 `rough_chapter_plan` 解析）。切换选择时刷新当前视图。
 
-项目中心主要使用：
+项目级步骤不使用范围选择。卷级步骤使用 volume_index。章级步骤同时使用 volume_index 和 chapter_index。
 
-- `POST /projects`：创建项目。
-- `PUT /projects/{project_id}`：更新项目基础设定。
-- `GET /projects`：列出项目。
-- `GET /projects/{project_id}`：获取项目。
-- `GET /projects/{project_id}/snapshot`：获取项目和 artifacts 的完整快照。
-- `GET /projects/{project_id}/quality-report`：获取基础质量门禁报告。
-- `GET /projects/{project_id}/exports/manuscript`：按卷章导出 Markdown 成稿。
-- `DELETE /projects/{project_id}`：删除项目。
-- `DELETE /projects/{project_id}/artifacts/{artifact_key}`：删除某个 artifact 及其后代。
+## 步骤字段定义
 
-更新项目时后端会清空旧 artifacts 和旧任务，因为基础设定变化后，已有产物已经不可信。
+`step_fields.py` 是 `step-meta.js` 的 Python 移植。每个步骤有 `label`、`group`、`description`、`review_points` 和 `fields: list[FieldDef]`。字段类型：`text`、`textarea`、`number`、`select`、`checkbox`、`list`。Select 选项从快照数据动态解析。
 
-## 前端 API 封装
+`widgets/form_builder.py` 负责把字段值读成后端可消费的 payload。下拉框显示 label，但提交时会通过 `_value_map` 转回 option value；程序化回填时也会把 value 反查成 label，以保证 GUI 展示和后端参数一致。
 
-`frontend/assets/js/api-client.js` 是前端所有 HTTP 调用的统一入口。它负责：
+## 视觉主题
 
-- 统一 JSON 请求。
-- 读取错误响应。
-- 暴露 `api.runRequirements()`、`api.runOutline()` 等步骤函数。
-- 提供 `waitForTask()` 轮询任务结果。
+GUI 统一通过 `theme.apply_theme(root)` 应用主题：
 
-其他前端模块不直接写 fetch 细节，而是调用这里的 API 方法。
+- 主壳使用深色侧栏承载品牌、导航、当前项目和范围选择。
+- 内容区使用浅色工作台风格，项目中心、工作台、审查面板共享标题、按钮、列表、表格和输入控件样式。
+- `style_text_widget()` 和 `style_listbox()` 专门处理 tkinter 原生控件，弥补 ttk 主题无法覆盖 `Text`、`Listbox` 的问题。
+- 页面文件只引用共享样式和主题色，不再各自维护分散的颜色常量。
 
-## 步骤元数据
+## 视图协作
 
-`step-meta.js` 是前端工作流 UI 的核心表。
+三个视图共享 `AppShared` 状态对象：
 
-每个步骤包含：
+- `current_project_id`：当前选择的项目
+- `current_snapshot`：完整的项目快照（项目数据、产物、知识库、进度）
+- `current_tasks`：任务记录列表
+- `scope`：当前卷/章选择
 
-- 页面归属。
-- 展示名称。
-- 描述文案。
-- 表单字段。
-- 审查清单。
-- 对应 endpoint。
+视图切换由 `App.switch_view()` 处理，每次切换时调用目标视图的 `refresh()` 方法。
 
-例如 `chapter_plan` 的字段里有 `volume_index`、`chapter_index`、`chapter_title`、`chapter_summary`、`scene_summaries` 等，提交时会被 `workspace-utils.js` 序列化为 payload，然后发给 `api.runChapterPlan()`。
+## 后端接口对应
 
-这个文件是前端和后端 schema 最容易不一致的地方。修改字段时必须同时确认：
+GUI 调用与旧 API 端点对应关系：
 
-1. `step-meta.js` 的字段存在。
-2. `workspace-utils.js` 能正确序列化。
-3. `api/schemas.py` 有对应请求字段。
-4. Prompt 模板确实使用了该字段。
+| 旧 HTTP 端点 | GUI 调用 |
+| --- | --- |
+| `GET /projects` | `orchestrator.list_projects()` |
+| `POST /projects` | `orchestrator.create_project(input)` |
+| `PUT /projects/{id}` | `orchestrator.update_project(id, input)` |
+| `DELETE /projects/{id}` | `project_service.delete(id)` + `task_service.delete_project(id)` |
+| `GET /projects/{id}/snapshot` | `orchestrator.project_snapshot(id)` |
+| `POST /projects/{id}/{step}` | `task_service.submit(...)` → `orchestrator.dispatch(...)` |
+| `GET /tasks/{id}` | `task_service.get(id)` |
+| `GET /projects/{id}/quality-report` | `build_quality_report(project)` |
+| `DELETE /projects/{id}/artifacts/{key}` | `project_service.remove_artifact(id, key)` |
 
-## 多页面协作
+## 与旧前端的对应关系
 
-前端并不是单页应用，而是多 HTML 页面共享 JS 模块。
-
-页面之间通过两种方式保持上下文：
-
-- URL query：`project_id`、`volume_index`、`chapter_index`。
-- localStorage：当前选中项目 ID。
-
-`state.js` 负责项目 ID 的读取、保存和导航链接同步。`scope-utils.js` 负责卷章选择归一化。
-
-## 工作区通用逻辑
-
-`workspace-utils.js` 是多个页面复用最多的模块。它负责：
-
-- 渲染表单字段。
-- 序列化表单。
-- 构造字段级 AI 补全请求。
-- 执行步骤并等待任务完成。
-- 构造 `base_artifact`。
-- 展示 artifact 摘要、正文和 metadata。
-- 删除当前步骤 artifact。
-
-其中 `buildBaseArtifactPayload()` 很关键。对于部分步骤，前端会显式把当前父级 artifact 附进 payload：
-
-- `volume_outline` 附 `rough_volume_outline`。
-- `chapter_plan` 附当前卷的 `rough_chapter_plan`。
-- `chapter` 附当前章的 `chapter_plan`。
-
-后端 `PlanningAgent` 会优先使用这个 `base_artifact`，没有时再从项目 artifacts 中按作用域查找。
-
-## 前端依赖状态
-
-`artifact-selectors.js` 负责判断一个步骤是否可执行。
-
-它会按当前选择的卷章查找依赖 artifact，并判断：
-
-- 缺失：按钮不可用。
-- stale：按钮不可用并提示前置已失效。
-- active：可以执行。
-
-这套判断和后端 `_ensure_step_ready()` 是对应关系。前端判断用于用户体验，后端判断用于最终安全校验。即使前端误判，后端仍会阻止非法执行。
-
-## 前端引导
-
-主工作流侧栏会根据当前项目快照、任务状态和步骤依赖计算“建议下一步”。它优先暴露失败任务，其次暴露当前上下文中已经解锁但还没有产物的对象。这样用户不需要先理解完整依赖图，也能沿着推荐项推进。
-
-主工作流页面现在按“创作驾驶舱”组织信息：
-
-- 左侧先展示项目摘要、阶段进度条、建议下一步和当前卷章范围，再展示完整步骤列表。
-- 阶段进度条按设定、结构、写作、审查分组，统计当前项目和当前卷章范围下的产物完成数。
-- 主工作区在表单前展示“读取 / 产出 / 范围 / 影响”，把当前步骤和上下游产物关系说清楚。
-- 生成按钮会根据当前范围是否已有 artifact 显示“生成对象名”或“重新生成对象名”，避免用户误以为所有步骤只是同一种后台任务。
-
-审查台会读取质量报告和项目进度，展示正文完成数、质量阻塞数和导出状态。质量报告来自 `GET /projects/{project_id}/quality-report`。
-
-## 字段级 AI 补全
-
-字段补全接口是：
-
-```text
-POST /projects/{project_id}/field-completion
-```
-
-前端发送当前字段、当前表单 payload、字段类型、已有值、温度和最大 tokens。后端使用 `build_completion_context()` 组装：
-
-- 当前字段信息。
-- 当前步骤其他字段。
-- 与该字段相关的项目设定。
-- 直接上游 artifacts 的压缩摘要。
-
-补全结果只返回一个 `suggestion` 字符串，然后前端回填到对应控件。
-
-这个功能的设计目标是“局部补参数”，而不是重跑整个步骤。
+| 旧前端模块 | 新 GUI 模块 |
+| --- | --- |
+| `step-meta.js` | `step_fields.py` |
+| `scope-utils.js` | `scope_utils.py`（范围部分） |
+| `planning-defaults.js` | `scope_utils.py`（默认值部分） |
+| `structured-parsers.js` | `scope_utils.py`（解析部分） |
+| `artifact-selectors.js` | `scope_utils.py`（产物选择部分） |
+| `workspace-utils.js` | `widgets/form_builder.py` |
+| `index-page.js` | `views/project_view.py` |
+| `workflow-page.js` | `views/workflow_view.py` |
+| `review-page.js` | `views/review_view.py` |
+| `api-client.js` | 直接调用后端服务（无需 API 封装） |

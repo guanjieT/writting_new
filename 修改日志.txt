@@ -1,3 +1,15 @@
+2026-05-13
+- 重新设计 tkinter GUI 视觉风格：新增 `novel_agent/gui/theme.py` 统一主题，主界面改为深色侧栏 + 浅色工作台，统一按钮、表格、Notebook、输入框、Text 和 Listbox 样式。
+- 优化项目中心、工作台、审查面板、动态表单和产物查看器的布局层级、间距、标题、列表和状态色，减少默认 tkinter 控件带来的粗糙感。
+- 修正动态表单 select 字段的参数同步：界面展示 label，提交给后端时转换为 option value，程序化回填时从 value 反查 label。
+- 同步更新 `agent-analyse/00-修改清单.md`、`01-整体架构.md` 和 `04-API与前端协作.md`。
+- 将前端从 Web（FastAPI + HTML/JS）迁移为 Python tkinter 桌面 GUI。删除 `frontend/` 和 `novel_agent/api/` 目录。新增 `novel_agent/gui/` 包（15 个文件）。
+- GUI 直接通过 `AppContainer` 调用后端服务，无 HTTP 层。异步任务通过 `tkinter.after()` 轮询，字段 AI 补全通过 `threading.Thread` 后台执行。
+- `step_fields.py` 移植前端 `step-meta.js` 的 12 个步骤字段定义。`scope_utils.py` 合并 `scope-utils.js`、`planning-defaults.js`、`structured-parsers.js`、`artifact-selectors.js` 的全部逻辑。
+- 三个核心视图：项目中心（project_view）、工作台（workflow_view）、审查面板（review_view）。侧栏提供范围选择和任务状态指示。
+- 清理冗余：删除 `main.py` 中的 API 模式死代码，提取共享 `STATUS_COLORS` 到 `step_fields.py`，重构 `build_base_artifact_payload` 消除重复代码块。
+- 同步更新 `agent-analyse/01-整体架构.md` 和 `04-API与前端协作.md` 以反映 GUI 架构。
+
 2026-05-09
 - 新增 `agent-analyse/` 分析文档目录，按整体架构、后端核心逻辑、工作流与产物机制、API 与前端协作、数据存储与审计、扩展维护指南拆分说明 `novel_agent_clean` 的代码逻辑和模块关系。
 - 修复 `FilePromptStore` 的章节生成 fallback 模板，避免 prompt 文件缺失时退化为不可执行占位文本，并使章节父级计划选择测试通过。

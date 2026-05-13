@@ -1,13 +1,20 @@
+"""Entry point for novel-agent-clean.
+
+GUI mode:  python -m novel_agent.gui
+"""
+
 from __future__ import annotations
 
-import uvicorn
 
-from .config import load_config
-from .api.app import app, create_app
+def main() -> None:
+    import tkinter as tk
 
-__all__ = ["app", "create_app"]
+    from .gui.app import App
+
+    root = tk.Tk()
+    App(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
-    config = load_config()
-    uvicorn.run(create_app(config), host=config.server_host, port=config.server_port, reload=False)
+    main()
